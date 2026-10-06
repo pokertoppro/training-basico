@@ -941,7 +941,8 @@ const SPOT_TYPES = [
   { code: 'CC',     desc: 'Cold Call (misma mesa que 3b)',              enabled: true,
     contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: 'Sqz',    desc: 'Squeeze (OR + caller)',                      enabled: false },
-  { code: 'C3b',    desc: 'Facing 3-bet',                               enabled: false },
+  { code: 'C3b4b',  desc: 'C3b y 4b (Hero abri\u00f3, villano 3b)',          enabled: true,
+    contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: '4b',     desc: '4-bet',                                      enabled: false },
   { code: 'C4b',    desc: 'Facing 4-bet',                               enabled: false },
   { code: 'Defend', desc: 'Defender BB vs Open',                        enabled: false }
@@ -996,8 +997,13 @@ function getBaseKeysForSpot(spotCode) {
     ['EP','MP','LP','SB'].forEach(b => keys.push('4b_' + b + '_OOP'));
     ['EP','MP','LP'].forEach(b => keys.push('4b_' + b + '_IP'));
   } else if (spotCode === 'C3b4b') {
-    // Solo OOP por ahora
-    ['EP','MP','LP','SB'].forEach(b => keys.push('C3b4b_' + b + '_OOP'));
+    // Estructura B\u00e1sico: 2 vs IP + 4 vs BLIND
+    keys.push('C3b4b_EP_vs_IP');
+    keys.push('C3b4b_MLP_vs_IP');
+    keys.push('C3b4b_EP_vs_BLIND');
+    keys.push('C3b4b_MP_vs_BLIND');
+    keys.push('C3b4b_LP_vs_BLIND');
+    keys.push('C3b4b_SB_vs_BB');
   }
   return keys;
 }
@@ -1239,6 +1245,10 @@ function validHeroesForCurrentSpot() {
     const heroes = new Set();
     _3B_SCENARIOS.forEach(s => s.heroes.forEach(h => heroes.add(h)));
     return POSITIONS.filter(p => heroes.has(p));
+  }
+  if (selectedSpot === 'C3b4b') {
+    // C3b4b: Hero abre. BB no abre nunca. Resto s\u00ed.
+    return POSITIONS.filter(p => p !== 'BB');
   }
   return POSITIONS;
 }
@@ -1863,26 +1873,29 @@ function newHand() {
     // Si el rango está vacío, intentar de nuevo (otra mano/villano)
     if (!range || Object.keys(range).length === 0) return newHand();
   } else if (selectedSpot === 'C3b4b') {
-    // C3b y 4b combinado: Hero abrió con una mano del rango OR de su posición,
-    // villano hizo 3b. Respuesta correcta: Fold | Call | 4b (raise).
-    // Solo OOP por ahora (villano IP postflop = a la izquierda del Hero, no Blind).
-    // Mapeo bucket:
-    //   EP = UTG, UTG1   MP = LJ, HJ   LP = CO   SB = SB
-    let bucket;
-    if (heroPos === 'UTG' || heroPos === 'UTG1') bucket = 'EP';
-    else if (heroPos === 'LJ' || heroPos === 'HJ') bucket = 'MP';
-    else if (heroPos === 'CO') bucket = 'LP';
-    else if (heroPos === 'SB') bucket = 'SB';
-    else return newHand();
+    // C3b y 4b combinado (B\u00e1sico): Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n,
+    // villano 3b. Respuesta correcta: Fold | Call | 4b (raise 25bb).
+    //
+    // Estructura B\u00e1sico:
+    //   Hero UTG/UTG1  vs villano IP posterior  \u2192 C3b4b_EP_vs_IP
+    //   Hero LJ/HJ/CO  vs villano IP posterior  \u2192 C3b4b_MLP_vs_IP
+    //   Hero UTG/UTG1  vs villano SB/BB         \u2192 C3b4b_EP_vs_BLIND
+    //   Hero LJ/HJ     vs villano SB/BB         \u2192 C3b4b_MP_vs_BLIND
+    //   Hero CO/BTN    vs villano SB/BB         \u2192 C3b4b_LP_vs_BLIND
+    //   Hero SB        vs villano BB            \u2192 C3b4b_SB_vs_BB
 
-    // Elegir villano (solo IP postflop = a la izquierda, no Blind, salvo Hero=SB que enfrenta solo BB)
+    // 1) Elegir villano v\u00e1lido
     const heroIdxLocal = POSITIONS.indexOf(heroPos);
     let allVillains;
     if (heroPos === 'SB') {
       allVillains = ['BB'];
+    } else if (heroPos === 'BTN') {
+      // BTN solo tiene a Blinds como villanos posteriores
+      allVillains = ['SB', 'BB'];
     } else {
-      // Villano debe estar a la izquierda (mayor índice) y NO ser Blind
-      allVillains = POSITIONS.filter((p, i) => i > heroIdxLocal && p !== 'SB' && p !== 'BB');
+      // Villanos: posiciones IP (a la izquierda, no Blind) + Blinds (SB/BB)
+      const ipVillains = POSITIONS.filter((p, i) => i > heroIdxLocal && p !== 'SB' && p !== 'BB');
+      allVillains = [...ipVillains, 'SB', 'BB'];
     }
     if (selectedVillainPositions !== null) {
       allVillains = allVillains.filter(p => selectedVillainPositions.has(p));
@@ -1890,20 +1903,40 @@ function newHand() {
     if (allVillains.length === 0) return newHand();
     villainPos = pickRandom(allVillains);
 
-    // Cargar el rango C3b4b OOP
-    rangeKey = 'C3b4b_' + bucket + '_OOP';
+    // 2) Determinar rangeKey seg\u00fan Hero bucket + Villain type
+    const villainIsBlind = (villainPos === 'SB' || villainPos === 'BB');
+    let heroBucket;
+    if (heroPos === 'UTG' || heroPos === 'UTG1') heroBucket = 'EP';
+    else if (heroPos === 'LJ' || heroPos === 'HJ') heroBucket = 'MP';
+    else if (heroPos === 'CO') heroBucket = 'LP_CO';   // CO: vs IP = MLP, vs BLIND = LP
+    else if (heroPos === 'BTN') heroBucket = 'LP_BTN'; // BTN: solo vs BLIND
+    else if (heroPos === 'SB') heroBucket = 'SB';
+    else return newHand();
+
+    // Mapeo final seg\u00fan vs IP o vs BLIND:
+    if (!villainIsBlind) {
+      // vs IP posterior
+      if (heroBucket === 'EP') rangeKey = 'C3b4b_EP_vs_IP';
+      else if (heroBucket === 'MP' || heroBucket === 'LP_CO') rangeKey = 'C3b4b_MLP_vs_IP';
+      else return newHand();
+    } else {
+      // vs BLIND (SB/BB)
+      if (heroPos === 'SB') rangeKey = 'C3b4b_SB_vs_BB';
+      else if (heroBucket === 'EP') rangeKey = 'C3b4b_EP_vs_BLIND';
+      else if (heroBucket === 'MP') rangeKey = 'C3b4b_MP_vs_BLIND';
+      else if (heroBucket === 'LP_CO' || heroBucket === 'LP_BTN') rangeKey = 'C3b4b_LP_vs_BLIND';
+      else return newHand();
+    }
+
     const c3bRange = resolveRange(rangeKey);
     if (!c3bRange || Object.keys(c3bRange).length === 0) return newHand();
 
-    // Cargar el rango OR de la posición del Hero (las manos con las que abriría)
-    // Usar OR_ADV si está disponible, sino OR
-    const orRange = resolveRange('OR_ADV_' + heroPos) || resolveRange('OR_' + heroPos);
+    // 3) Cargar el rango OR del Hero (las manos con las que habr\u00eda abierto)
+    const orRange = resolveRange('OR_' + heroPos);
     if (!orRange || Object.keys(orRange).length === 0) return newHand();
 
-    // Filtrar manos: solo las que están en el rango OR (Hero las habría abierto)
+    // 4) Combinar: cada mano del OR \u2192 acci\u00f3n del C3b4b si est\u00e1, sino 'fold'
     const orHands = Object.keys(orRange).filter(h => h !== '__overrides' && h !== '__pct');
-    // Combinar las acciones del C3b4b con el rango OR para construir el rango final
-    // Cada mano del OR tendrá: la acción del C3b4b (call/raise) si está, sino 'fold'
     range = {};
     orHands.forEach(h => {
       const c3bAction = c3bRange[h];
@@ -1913,12 +1946,8 @@ function newHand() {
         range[h] = 'fold';
       }
     });
-    // Copiar overrides del C3b4b (si los hay) al rango efectivo
     if (c3bRange.__overrides) {
-      Object.defineProperty(range, '__overrides', {
-        value: c3bRange.__overrides,
-        enumerable: false
-      });
+      Object.defineProperty(range, '__overrides', { value: c3bRange.__overrides, enumerable: false });
     }
   }
 
@@ -2250,10 +2279,10 @@ function configureButtonsForScenario() {
     btnPush.textContent = '4b Push';
   }
 
-  // Modo C3b y 4b combinado (Cash 100bb): 3 acciones — Fold | Call | 4b
-  // Hero abrió con una mano del rango OR de su posición, villano hizo 3b.
+  // Modo C3b y 4b combinado (Cash 100bb): 3 acciones \u2014 Fold | Call | 25bb
+  // Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n, villano hizo 3b.
   if (sc.spotType === 'C3b4b') {
-    btnRaise.textContent = '4b';
+    btnRaise.textContent = '25bb';
   }
 
   // Modo 3b / CC Cash 100bb: botón raise con tamaño según IP/OOP postflop
@@ -2852,6 +2881,53 @@ const RANGES_DATA = {
               "75s","74s","64s","63s","53s","52s","43s","42s","32s",
               "AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","A3o","A2o",
               "KJo","KTo","K9o","K8o","QJo","QTo","Q9o","Q8o","JTo","J9o","J8o","T9o","T8o","98o"]
+    },
+
+    /* ---------- C3b y 4b (Cash 100bb) ----------
+       Raise = 4b (25bb)
+       Call  = pagar el 3b
+       Resto del rango OR \u2192 fold */
+
+    // Hero UTG/UTG1 vs villano IP posterior (hizo 3b)
+    "C3b4b_EP_vs_IP": {
+      raise: ["AA","KK","AKs"],
+      call:  ["QQ","JJ","TT","99","88","77","66",
+              "AQs","AJs","ATs","KQs","76s","65s","54s","AKo"]
+    },
+    // Hero LJ/HJ/CO vs villano IP posterior (hizo 3b)
+    "C3b4b_MLP_vs_IP": {
+      raise: ["AA","KK","QQ","AKs","A5s","KTs"],
+      call:  ["JJ","TT","99","88","77","66","55",
+              "AQs","AJs","ATs","KQs","KJs","QJs","JTs","65s","54s","AKo","AQo"]
+    },
+    // Hero UTG/UTG1 vs villano Blind (SB o BB) que hizo 3b
+    "C3b4b_EP_vs_BLIND": {
+      raise: ["AA","KK"],
+      call:  ["QQ","JJ","TT","AKs","AQs","AJs","ATs","AKo"]
+    },
+    // Hero LJ/HJ vs villano Blind que hizo 3b
+    "C3b4b_MP_vs_BLIND": {
+      raise: ["AA","KK","A5s"],
+      call:  ["QQ","JJ","TT","99","88","77",
+              "AKs","AQs","AJs","ATs","KQs","KJs","QJs","JTs","76s","65s","54s","AKo"]
+    },
+    // Hero CO/BTN vs villano Blind que hizo 3b
+    "C3b4b_LP_vs_BLIND": {
+      raise: ["AA","KK","QQ","AKs","A5s","K9s"],
+      call:  ["JJ","TT","99","88","77","66","55",
+              "AQs","AJs","ATs","A9s","A8s","A7s",
+              "KQs","KJs","KTs","QJs","QTs","JTs","T9s","98s","76s","65s","54s",
+              "AKo","AQo","KQo"]
+    },
+    // Hero SB abre, villano BB hace 3b
+    "C3b4b_SB_vs_BB": {
+      raise: ["AA","KK","QQ","JJ","AKs","A5s","JTs","J9s","T9s","AKo"],
+      call:  ["TT","99","88","77","66","55","44","33","22",
+              "AQs","AJs","ATs","A9s","A8s","A7s",
+              "KQs","KJs","KTs","K9s","K8s","K7s",
+              "QJs","QTs","Q9s",
+              "98s","87s","76s","65s","54s",
+              "AQo","KQo"]
     }
   }
 };
