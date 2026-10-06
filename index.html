@@ -255,6 +255,10 @@
   .chip.blind-bb { --chip-main: #e06060; }
   .chip.raise    { --chip-main: #f0c848; }
   .chip.limp     { --chip-main: #8a8a8a; }
+  /* 3b: blanca */
+  .chip.three-bet { --chip-main: #f0f0f0; }
+  /* 4b: morada */
+  .chip.four-bet  { --chip-main: #8a4fbf; }
 
   /* Pot */
   .pot {
@@ -941,9 +945,10 @@ const SPOT_TYPES = [
   { code: 'CC',     desc: 'Cold Call (misma mesa que 3b)',              enabled: true,
     contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: 'Sqz',    desc: 'Squeeze (OR + caller)',                      enabled: false },
-  { code: 'C3b4b',  desc: 'C3b y 4b (Hero abri\u00f3, villano 3b)',          enabled: true,
+  { code: 'C3b',    desc: 'Facing 3-bet',                               enabled: true,
     contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
-  { code: '4b',     desc: '4-bet',                                      enabled: false },
+  { code: '4b',     desc: '4-bet (misma mesa que C3b)',                 enabled: true,
+    contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: 'C4b',    desc: 'Facing 4-bet',                               enabled: false },
   { code: 'Defend', desc: 'Defender BB vs Open',                        enabled: false }
 ];
@@ -992,12 +997,8 @@ function getBaseKeysForSpot(spotCode) {
     if (typeof ROL_SCENARIOS !== 'undefined') {
       ROL_SCENARIOS.forEach(s => keys.push(s.rangeKey));
     }
-  } else if (spotCode === '4b') {
-    // 4 OOP + 3 IP. SB solo tiene OOP (BB siempre actúa después postflop).
-    ['EP','MP','LP','SB'].forEach(b => keys.push('4b_' + b + '_OOP'));
-    ['EP','MP','LP'].forEach(b => keys.push('4b_' + b + '_IP'));
-  } else if (spotCode === 'C3b4b') {
-    // Estructura B\u00e1sico: 2 vs IP + 4 vs BLIND
+  } else if (spotCode === 'C3b4b' || spotCode === 'C3b' || spotCode === '4b') {
+    // Estructura B\u00e1sico: 2 vs IP + 4 vs BLIND. C3b y 4b comparten estos rangos.
     keys.push('C3b4b_EP_vs_IP');
     keys.push('C3b4b_MLP_vs_IP');
     keys.push('C3b4b_EP_vs_BLIND');
@@ -1030,7 +1031,7 @@ function countRangesForContext(format, stack) {
   const savedFmt = selectedFormat, savedStk = selectedStack;
   selectedFormat = format; selectedStack = stack;
   let count = 0;
-  ['OR','OR_ADV','3b','CC','ROL','4b','C3b4b'].forEach(spotCode => {
+  ['OR','OR_ADV','3b','CC','ROL','4b','C3b','C3b4b'].forEach(spotCode => {
     count += countRangesForSpot(spotCode);
   });
   // Restaurar
@@ -1246,8 +1247,8 @@ function validHeroesForCurrentSpot() {
     _3B_SCENARIOS.forEach(s => s.heroes.forEach(h => heroes.add(h)));
     return POSITIONS.filter(p => heroes.has(p));
   }
-  if (selectedSpot === 'C3b4b') {
-    // C3b4b: Hero abre. BB no abre nunca. Resto s\u00ed.
+  if (selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b') {
+    // C3b / 4b: Hero abre. BB no abre nunca. Resto s\u00ed.
     return POSITIONS.filter(p => p !== 'BB');
   }
   return POSITIONS;
@@ -1353,7 +1354,7 @@ function refreshVillainDropdown() {
 function refreshVillainVisibility() {
   const wrap = document.getElementById('villainWrap');
   // 3b y CC necesitan villano (CC usa los mismos rangos que 3b)
-  const needsVillain = (selectedSpot === '3b' || selectedSpot === 'CC' || selectedSpot === 'C3b4b');
+  const needsVillain = (selectedSpot === '3b' || selectedSpot === 'CC' || selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b');
   wrap.style.display = needsVillain ? '' : 'none';
 }
 
@@ -1681,6 +1682,23 @@ function pickBiasedHand(range, spotType) {
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
+  // Sesgo especial para 4b: 70% raise (4b), 20% call, 10% fold
+  if (spotType === '4b') {
+    const hasCall = byAction.call.length > 0;
+    const hasRaise = byAction.raise.length > 0;
+    const hasFold = byAction.fold.length > 0;
+    const roll = Math.random();
+    let chosenAction;
+    if (roll < 0.70 && hasRaise) chosenAction = 'raise';
+    else if (roll < 0.90 && hasCall) chosenAction = 'call';
+    else if (hasFold) chosenAction = 'fold';
+    else if (hasRaise) chosenAction = 'raise';
+    else if (hasCall) chosenAction = 'call';
+    else chosenAction = 'fold';
+    const pool = byAction[chosenAction];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
   // Decisión: fold o decisión
   const roll = Math.random() * 100;
   let chosenAction;
@@ -1872,8 +1890,8 @@ function newHand() {
     range = resolveRange(rangeKey);
     // Si el rango está vacío, intentar de nuevo (otra mano/villano)
     if (!range || Object.keys(range).length === 0) return newHand();
-  } else if (selectedSpot === 'C3b4b') {
-    // C3b y 4b combinado (B\u00e1sico): Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n,
+  } else if (selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b') {
+    // C3b / 4b (comparten mesa y rangos): Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n,
     // villano 3b. Respuesta correcta: Fold | Call | 4b (raise 25bb).
     //
     // Estructura B\u00e1sico:
@@ -2017,9 +2035,16 @@ function renderTable() {
     if (sc.villainPos === 'SB') pot -= 0.5;
     if (sc.villainPos === 'BB') pot -= 1;
   }
-  if (sc.spotType === 'C3b4b') {
-    // Hero abrió (orSize) y villano hizo 3b (threeBetSize)
-    pot += orSize + threeBetSize;
+  if (sc.spotType === 'C3b4b' || sc.spotType === 'C3b' || sc.spotType === '4b') {
+    // Hero abri\u00f3 (orSize) y villano hizo 3b. Tama\u00f1o del 3b depende de si villano est\u00e1 IP u OOP postflop:
+    //   - Villano IP postflop (a la izq del Hero, no Blind) \u2192 9bb
+    //   - Villano OOP postflop (Blind)                      \u2192 12bb
+    const POSTFLOP_P = ['SB','BB','UTG','UTG1','LJ','HJ','CO','BTN'];
+    const hIdx = POSTFLOP_P.indexOf(sc.heroPos);
+    const vIdx = POSTFLOP_P.indexOf(sc.villainPos);
+    const villainIPpot = vIdx > hIdx;
+    const threeBetReal = villainIPpot ? 9 : 12;
+    pot += orSize + threeBetReal;
     if (sc.villainPos === 'SB') pot -= 0.5;
     if (sc.villainPos === 'BB') pot -= 1;
   }
@@ -2048,8 +2073,8 @@ function renderTable() {
       const p = POSITIONS[i];
       if (p !== sc.villainPos) foldedPositions.add(p);
     }
-  } else if (sc.spotType === 'C3b4b') {
-    // Igual que 4b: Hero abrió, posteriores foldearon excepto villano
+  } else if (sc.spotType === 'C3b4b' || sc.spotType === 'C3b' || sc.spotType === '4b') {
+    // Hero abri\u00f3, posteriores foldearon excepto villano (que hizo 3b)
     for (let i = 0; i < heroIdx; i++) foldedPositions.add(POSITIONS[i]);
     for (let i = heroIdx + 1; i < POSITIONS.length; i++) {
       const p = POSITIONS[i];
@@ -2107,13 +2132,18 @@ function renderTable() {
         else stack -= 7;
       }
     }
-    // En C3b y 4b combinado: Hero apostó orSize (open), villano apostó threeBetSize (3b)
-    if (sc.spotType === 'C3b4b') {
+    // En C3b y 4b combinado: Hero apost\u00f3 orSize (open), villano apost\u00f3 3b real (9 u 12bb)
+    if (sc.spotType === 'C3b4b' || sc.spotType === 'C3b' || sc.spotType === '4b') {
       if (isHero) stack -= orSize;
       if (isVillain) {
-        if (pos === 'SB') stack -= (threeBetSize - 0.5);
-        else if (pos === 'BB') stack -= (threeBetSize - 1);
-        else stack -= threeBetSize;
+        const POSTFLOP_S = ['SB','BB','UTG','UTG1','LJ','HJ','CO','BTN'];
+        const hIdxS = POSTFLOP_S.indexOf(sc.heroPos);
+        const vIdxS = POSTFLOP_S.indexOf(sc.villainPos);
+        const villainIPs = vIdxS > hIdxS;
+        const threeBetReal = villainIPs ? 9 : 12;
+        if (pos === 'SB') stack -= (threeBetReal - 0.5);
+        else if (pos === 'BB') stack -= (threeBetReal - 1);
+        else stack -= threeBetReal;
       }
     }
     if (isLimper && sc.spotType === 'ROL') {
@@ -2144,10 +2174,19 @@ function renderTable() {
       if (isHero) { chipAmount = orSize; chipClass = 'chip raise'; }
       if (isVillain) { chipAmount = 7; chipClass = 'chip raise'; }
     }
-    // En C3b y 4b: Hero abrió a orSize, villano hizo 3b a threeBetSize
-    if (sc.spotType === 'C3b4b') {
+    // En C3b y 4b: Hero abri\u00f3 a orSize (amarilla), villano hizo 3b (negra)
+    //   - Villano IP postflop (a la izq del Hero, no Blind) \u2192 3b 9bb
+    //   - Villano OOP postflop (Blind SB/BB, o Hero=SB vs BB)   \u2192 3b 12bb
+    if (sc.spotType === 'C3b4b' || sc.spotType === 'C3b' || sc.spotType === '4b') {
       if (isHero) { chipAmount = orSize; chipClass = 'chip raise'; }
-      if (isVillain) { chipAmount = threeBetSize; chipClass = 'chip raise'; }
+      if (isVillain) {
+        const POSTFLOP = ['SB','BB','UTG','UTG1','LJ','HJ','CO','BTN'];
+        const heroIdxP = POSTFLOP.indexOf(sc.heroPos);
+        const villIdxP = POSTFLOP.indexOf(sc.villainPos);
+        const villainIP = villIdxP > heroIdxP;
+        chipAmount = villainIP ? 9 : 12;
+        chipClass = 'chip three-bet';
+      }
     }
     // En ROL, los limpers muestran chip 1bb con el mismo estilo rojo que la BB
     if (isLimper && sc.spotType === 'ROL') {
@@ -2160,9 +2199,13 @@ function renderTable() {
       chip.className = chipClass;
       // Posicionar la chip entre el seat y el centro (un poco hacia el centro)
       const centerX = 50, centerY = 50;
-      let cx = coord.left + (centerX - coord.left) * 0.28;
-      let cy = coord.top + (centerY - coord.top) * 0.28;
-      // Hero está abajo del todo con las cartas ENCIMA del label.
+      // Si el villano es BTN y hay bot\u00f3n D, mover la ficha m\u00e1s hacia el centro
+      // para que no se superponga con el bot\u00f3n D
+      const villainIsBTNseat = (isVillain && pos === 'BTN' && !isHero);
+      const factor = villainIsBTNseat ? 0.42 : 0.28;
+      let cx = coord.left + (centerX - coord.left) * factor;
+      let cy = coord.top + (centerY - coord.top) * factor;
+      // Hero est\u00e1 abajo del todo con las cartas ENCIMA del label.
       // Si el chip es del Hero, colocarlo arriba de las cartas para no taparlas.
       if (isHero) {
         cx = coord.left;
@@ -2281,7 +2324,7 @@ function configureButtonsForScenario() {
 
   // Modo C3b y 4b combinado (Cash 100bb): 3 acciones \u2014 Fold | Call | 25bb
   // Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n, villano hizo 3b.
-  if (sc.spotType === 'C3b4b') {
+  if (sc.spotType === 'C3b4b' || sc.spotType === 'C3b' || sc.spotType === '4b') {
     btnRaise.textContent = '25bb';
   }
 
@@ -2352,6 +2395,9 @@ function showFeedback(userAction, correctAction, isOk) {
     const limpersList = (sc.limpers || []).join(', ');
     const limpersLabel = (sc.limpers || []).length === 1 ? 'Limper' : 'Limpers';
     spotDesc = `<b>ROL</b> · Hero en <b>${sc.heroPos}</b> vs ${limpersLabel} en <b>${limpersList || '—'}</b>`;
+  } else if (sc.spotType === 'C3b4b' || sc.spotType === 'C3b' || sc.spotType === '4b') {
+    const label = sc.spotType === '4b' ? '4b' : 'C3b';
+    spotDesc = `<b>${label}</b> \u00b7 Hero abri\u00f3 desde <b>${sc.heroPos}</b>, villano <b>${sc.villainPos}</b> hizo 3b`;
   } else {
     spotDesc = `<b>${sc.spotType}</b> · Hero en <b>${sc.heroPos}</b>`;
   }
