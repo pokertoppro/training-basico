@@ -1958,7 +1958,7 @@ function renderTable() {
   const orSize = (selectedFormat === 'torneo') ? 2 : 3;
   // Tamaño del 3b: 9bb en cash (3x el OR), 7bb en torneo
   const threeBetSize = (selectedFormat === 'torneo') ? 7 : 9;
-  if (sc.spotType === '3b') pot += orSize; // villano abrió
+  if (sc.spotType === '3b' || sc.spotType === 'CC') pot += orSize; // villano abrió
   if (sc.spotType === '4b') {
     // Hero abrió (orSize) y villano hizo 3b (threeBetSize)
     pot += orSize + threeBetSize;
@@ -1985,7 +1985,7 @@ function renderTable() {
   const foldedPositions = new Set();
   if (sc.spotType === 'OR') {
     for (let i = 0; i < heroIdx; i++) foldedPositions.add(POSITIONS[i]);
-  } else if (sc.spotType === '3b') {
+  } else if (sc.spotType === '3b' || sc.spotType === 'CC') {
     for (let i = 0; i < heroIdx; i++) {
       const p = POSITIONS[i];
       if (p !== sc.villainPos) foldedPositions.add(p);
@@ -2039,7 +2039,7 @@ function renderTable() {
     let stack = parseFloat(selectedStack) || 100;
     if (pos === 'SB') stack -= 0.5;
     if (pos === 'BB') stack -= 1;
-    if (isVillain && sc.spotType === '3b') {
+    if (isVillain && (sc.spotType === '3b' || sc.spotType === 'CC')) {
       // Villano abrió: si era Blind, descontar solo lo que falta tras la ciega
       if (pos === 'SB') stack -= (orSize - 0.5);
       else if (pos === 'BB') stack -= (orSize - 1);
@@ -2087,7 +2087,7 @@ function renderTable() {
     let chipClass = 'chip';
     if (pos === 'SB') { chipAmount = 0.5; chipClass = 'chip blind-sb'; }
     if (pos === 'BB') { chipAmount = 1; chipClass = 'chip blind-bb'; }
-    if (isVillain && sc.spotType === '3b') { chipAmount = orSize; chipClass = 'chip raise'; }
+    if (isVillain && (sc.spotType === '3b' || sc.spotType === 'CC')) { chipAmount = orSize; chipClass = 'chip raise'; }
     // En 4b: Hero abrió a orSize bb, villano hizo 3b a 7bb (sobrescribe la ciega si aplica)
     if (sc.spotType === '4b') {
       if (isHero) { chipAmount = orSize; chipClass = 'chip raise'; }
@@ -2294,8 +2294,9 @@ function showFeedback(userAction, correctAction, isOk) {
     spotDesc = `<b>OR</b> desde <b>${sc.heroPos}</b>`;
   } else if (sc.spotType === 'OR_ADV') {
     spotDesc = `<b>OR Avanzado</b> desde <b>${sc.heroPos}</b>`;
-  } else if (sc.spotType === '3b') {
-    spotDesc = `<b>3b</b> · Hero en <b>${sc.heroPos}</b> vs <b>${sc.villainPos}</b> open 3bb`;
+  } else if (sc.spotType === '3b' || sc.spotType === 'CC') {
+    const label = sc.spotType === 'CC' ? 'CC' : '3b';
+    spotDesc = `<b>${label}</b> · Hero en <b>${sc.heroPos}</b> vs <b>${sc.villainPos}</b> open 3bb`;
   } else if (sc.spotType === 'ROL') {
     const limpersList = (sc.limpers || []).join(', ');
     const limpersLabel = (sc.limpers || []).length === 1 ? 'Limper' : 'Limpers';
