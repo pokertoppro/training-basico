@@ -1635,8 +1635,11 @@ function dealCardsForHand(handKeyStr) {
  * Dado un rango activo, elige una mano respetando el sesgo de fold.
  * FOLD_PERCENTAGE% de las veces devuelve una mano de fold.
  * El resto: una mano de raise o call (equitativamente entre las acciones disponibles).
+ *
+ * spotType === 'CC': sesgo especial para practicar cold-call.
+ *   75% CALL · 25% RAISE (3b). Sin fold.
  */
-function pickBiasedHand(range) {
+function pickBiasedHand(range, spotType) {
   // Clasificar todas las 169 manos según acción
   const byAction = { raise: [], call: [], push: [], fold: [] };
   RANKS.forEach((r1, i) => {
@@ -1649,6 +1652,24 @@ function pickBiasedHand(range) {
       byAction[action].push(label);
     });
   });
+
+  // Sesgo especial para CC: 70% call, 20% raise (3b), 10% fold
+  if (spotType === 'CC') {
+    const hasCall = byAction.call.length > 0;
+    const hasRaise = byAction.raise.length > 0;
+    const hasFold = byAction.fold.length > 0;
+    const roll = Math.random();
+    let chosenAction;
+    if (roll < 0.70 && hasCall) chosenAction = 'call';
+    else if (roll < 0.90 && hasRaise) chosenAction = 'raise';
+    else if (hasFold) chosenAction = 'fold';
+    // Fallbacks si la categoría preferida está vacía
+    else if (hasCall) chosenAction = 'call';
+    else if (hasRaise) chosenAction = 'raise';
+    else chosenAction = 'fold';
+    const pool = byAction[chosenAction];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
 
   // Decisión: fold o decisión
   const roll = Math.random() * 100;
@@ -1902,7 +1923,8 @@ function newHand() {
   }
 
   // Elegir mano con sesgo de fold según FOLD_PERCENTAGE
-  const hk = pickBiasedHand(range);
+  // (CC usa sesgo especial: 75% call, 25% raise, sin fold)
+  const hk = pickBiasedHand(range, selectedSpot);
   const [c1, c2] = dealCardsForHand(hk);
   // La acción correcta puede depender del combo específico (palos) si hay overrides
   let correct = getActionForCombo(range, c1, c2);
