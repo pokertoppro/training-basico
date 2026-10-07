@@ -944,7 +944,8 @@ const SPOT_TYPES = [
     contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: 'CC',     desc: 'Cold Call (misma mesa que 3b)',              enabled: true,
     contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
-  { code: 'Sqz',    desc: 'Squeeze (OR + caller)',                      enabled: false },
+  { code: 'Sqz',    desc: 'Squeeze (OR + 1 o 2 callers)',               enabled: true,
+    contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: 'C3b',    desc: 'Facing 3-bet',                               enabled: true,
     contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: '4b',     desc: '4-bet (misma mesa que C3b)',                 enabled: true,
@@ -997,6 +998,10 @@ function getBaseKeysForSpot(spotCode) {
     if (typeof ROL_SCENARIOS !== 'undefined') {
       ROL_SCENARIOS.forEach(s => keys.push(s.rangeKey));
     }
+  } else if (spotCode === 'Sqz') {
+    if (typeof SQZ_SCENARIOS !== 'undefined') {
+      SQZ_SCENARIOS.forEach(s => keys.push(s.rangeKey));
+    }
   } else if (spotCode === 'C3b4b' || spotCode === 'C3b' || spotCode === '4b') {
     // Estructura B\u00e1sico: 2 vs IP + 4 vs BLIND. C3b y 4b comparten estos rangos.
     keys.push('C3b4b_EP_vs_IP');
@@ -1031,7 +1036,7 @@ function countRangesForContext(format, stack) {
   const savedFmt = selectedFormat, savedStk = selectedStack;
   selectedFormat = format; selectedStack = stack;
   let count = 0;
-  ['OR','OR_ADV','3b','CC','ROL','4b','C3b','C3b4b'].forEach(spotCode => {
+  ['OR','OR_ADV','3b','CC','ROL','4b','C3b','C3b4b','Sqz'].forEach(spotCode => {
     count += countRangesForSpot(spotCode);
   });
   // Restaurar
@@ -1135,6 +1140,23 @@ const _3B_SCENARIOS = [
   { id: '3b_IP_vs_LP', heroes: ['BTN'],                        villainPool: ['CO'],        rangeKey: '3b_IP_vs_LP' },
   // Hero BB vs SB usa rango IP (BB está en posición post-flop cuando SB abre)
   { id: '3b_IP_vs_SB', heroes: ['BB'], villainPool: ['SB'], rangeKey: '3b_IP_vs_SB' }
+];
+
+/* ---------- ESCENARIOS SQUEEZE ----------
+ * callers: cu\u00e1ntos cold-callers hay entre OR y Hero (1 \u00f3 2)
+ * villainPool: posiciones donde puede estar el OR villano
+ * heroes: posiciones donde puede estar el Hero
+ * rangeKey: rango a usar (misma estructura que 3b)
+ */
+const SQZ_SCENARIOS = [
+  // Sqz_EP Single: OR UTG/UTG1/LJ + 1 caller + Hero (LJ cuenta como EP)
+  { id: 'Sqz_EP',     callers: 1, villainPool: ['UTG','UTG1','LJ'],   heroes: ['HJ','CO','BTN','SB','BB'], rangeKey: 'Sqz_EP' },
+  // Sqz_EP Multiway: OR UTG/UTG1/LJ + 2 callers + Hero
+  { id: 'Sqz_EP_MW',  callers: 2, villainPool: ['UTG','UTG1','LJ'],   heroes: ['CO','BTN','SB','BB'],      rangeKey: 'Sqz_EP_MW' },
+  // Sqz_MLP Single: OR HJ/CO/BTN + 1 caller + Hero
+  { id: 'Sqz_MLP',    callers: 1, villainPool: ['HJ','CO','BTN'],     heroes: ['CO','BTN','SB','BB'],      rangeKey: 'Sqz_MLP' },
+  // Sqz_MLP Multiway: OR HJ/CO + 2 callers + Hero (BTN NO, no quedan 2 jugadores entre BTN y Hero)
+  { id: 'Sqz_MLP_MW', callers: 2, villainPool: ['HJ','CO'],           heroes: ['BTN','SB','BB'],           rangeKey: 'Sqz_MLP_MW' }
 ];
 
 /* ---------- ESTADO ---------- */
@@ -1251,6 +1273,12 @@ function validHeroesForCurrentSpot() {
     // C3b / 4b: Hero abre. BB no abre nunca. Resto s\u00ed.
     return POSITIONS.filter(p => p !== 'BB');
   }
+  if (selectedSpot === 'Sqz') {
+    // Sqz: Hero puede estar en cualquier posici\u00f3n donde algun escenario lo permita
+    const heroes = new Set();
+    SQZ_SCENARIOS.forEach(s => s.heroes.forEach(h => heroes.add(h)));
+    return POSITIONS.filter(p => heroes.has(p));
+  }
   return POSITIONS;
 }
 
@@ -1354,7 +1382,7 @@ function refreshVillainDropdown() {
 function refreshVillainVisibility() {
   const wrap = document.getElementById('villainWrap');
   // 3b y CC necesitan villano (CC usa los mismos rangos que 3b)
-  const needsVillain = (selectedSpot === '3b' || selectedSpot === 'CC' || selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b');
+  const needsVillain = (selectedSpot === '3b' || selectedSpot === 'CC' || selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b' || selectedSpot === 'Sqz');
   wrap.style.display = needsVillain ? '' : 'none';
 }
 
@@ -1682,6 +1710,23 @@ function pickBiasedHand(range, spotType) {
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
+  // Sesgo especial para Sqz: 70% raise (sqz), 20% call, 10% fold
+  if (spotType === 'Sqz') {
+    const hasCall = byAction.call.length > 0;
+    const hasRaise = byAction.raise.length > 0;
+    const hasFold = byAction.fold.length > 0;
+    const roll = Math.random();
+    let chosenAction;
+    if (roll < 0.70 && hasRaise) chosenAction = 'raise';
+    else if (roll < 0.90 && hasCall) chosenAction = 'call';
+    else if (hasFold) chosenAction = 'fold';
+    else if (hasRaise) chosenAction = 'raise';
+    else if (hasCall) chosenAction = 'call';
+    else chosenAction = 'fold';
+    const pool = byAction[chosenAction];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
   // Sesgo especial para 4b: 70% raise (4b), 20% call, 10% fold
   if (spotType === '4b') {
     const hasCall = byAction.call.length > 0;
@@ -1779,6 +1824,11 @@ function newHand() {
   } else if (selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b') {
     // C3b / 4b: Hero abri\u00f3. BB no abre nunca. Resto s\u00ed (incluido BTN para vs BLIND).
     validHeroPositions = validHeroPositions.filter(p => p !== 'BB');
+  } else if (selectedSpot === 'Sqz') {
+    // Sqz: Hero debe estar en algun escenario Sqz
+    const heroesInAnyScenario = new Set();
+    SQZ_SCENARIOS.forEach(s => s.heroes.forEach(h => heroesInAnyScenario.add(h)));
+    validHeroPositions = validHeroPositions.filter(p => heroesInAnyScenario.has(p));
   }
 
   if (validHeroPositions.length === 0) {
@@ -1919,6 +1969,59 @@ function newHand() {
     if (c3bRange.__overrides) {
       Object.defineProperty(range, '__overrides', { value: c3bRange.__overrides, enumerable: false });
     }
+  } else if (selectedSpot === 'Sqz') {
+    // Squeeze: Hero enfrenta OR villano + 1 o 2 cold-callers. Debe decidir fold / call / squeeze (raise).
+    // Elegir escenario Sqz v\u00e1lido para esta posici\u00f3n Hero.
+    const possibleScenarios = SQZ_SCENARIOS.filter(s => s.heroes.includes(heroPos));
+    if (possibleScenarios.length === 0) return newHand();
+    const scenario = pickRandom(possibleScenarios);
+
+    // Villano OR del escenario
+    let villainPool = scenario.villainPool;
+    // Filtrar: el OR debe estar antes que el Hero
+    villainPool = villainPool.filter(p => POSITIONS.indexOf(p) < heroIdx);
+    if (selectedVillainPositions !== null) {
+      villainPool = villainPool.filter(p => selectedVillainPositions.has(p));
+    }
+    if (villainPool.length === 0) return newHand();
+    villainPos = pickRandom(villainPool);
+
+    // Elegir callers (entre OR y Hero)
+    const villainIdx = POSITIONS.indexOf(villainPos);
+    const availableCallerPool = POSITIONS.filter((p, i) => i > villainIdx && i < heroIdx);
+    if (availableCallerPool.length < scenario.callers) return newHand();
+    // Elegir N callers random
+    const shuffled = [...availableCallerPool].sort(() => Math.random() - 0.5);
+    const callersList = shuffled.slice(0, scenario.callers).sort((a,b) => POSITIONS.indexOf(a) - POSITIONS.indexOf(b));
+
+    rangeKey = scenario.rangeKey;
+    const raiseRange = resolveRange(rangeKey);
+    if (!raiseRange || Object.keys(raiseRange).length === 0) return newHand();
+
+    // Determinar bucket del Hero para el rango de call
+    let heroBucketSqz;
+    if (heroPos === 'LJ' || heroPos === 'HJ') heroBucketSqz = 'MP';
+    else if (heroPos === 'CO' || heroPos === 'BTN') heroBucketSqz = 'LP';
+    else if (heroPos === 'SB') heroBucketSqz = 'SB';
+    else if (heroPos === 'BB') heroBucketSqz = 'BB';
+    else return newHand();
+
+    const callRange = resolveRange('Sqz_CALL_' + heroBucketSqz) || {};
+
+    // Combinar: raise del escenario + call del bucket Hero
+    range = {};
+    Object.keys(raiseRange).forEach(h => {
+      if (h === '__overrides' || h === '__pct') return;
+      if (raiseRange[h] === 'raise') range[h] = 'raise';
+    });
+    Object.keys(callRange).forEach(h => {
+      if (h === '__overrides' || h === '__pct') return;
+      if (callRange[h] === 'call' && !range[h]) range[h] = 'call';
+    });
+
+    // Reutilizar la variable "limpers" para pasar los callers al render
+    // (se trata igual visualmente \u2014 jugadores con chip de 3bb en la mesa)
+    limpers = callersList;
   }
 
   // Elegir mano con sesgo de fold según FOLD_PERCENTAGE
@@ -2008,6 +2111,18 @@ function renderTable() {
       else { pot += 1; }
     });
   }
+  if (sc.spotType === 'Sqz') {
+    // Villano OR puso 3bb (si es Blind, menos lo que ya puso)
+    pot += orSize;
+    if (sc.villainPos === 'SB') pot -= 0.5;
+    if (sc.villainPos === 'BB') pot -= 1;
+    // Cada caller pone 3bb (si es Blind, menos lo que ya puso)
+    limpersSet.forEach(c => {
+      pot += orSize;
+      if (c === 'SB') pot -= 0.5;
+      if (c === 'BB') pot -= 1;
+    });
+  }
 
   // Determinar qué posiciones están "foldeadas" (atenuadas visualmente)
   const foldedPositions = new Set();
@@ -2037,6 +2152,12 @@ function renderTable() {
     for (let i = 0; i < heroIdx; i++) {
       const p = POSITIONS[i];
       if (!limpersSet.has(p)) foldedPositions.add(p);
+    }
+  } else if (sc.spotType === 'Sqz') {
+    // Todos los anteriores al Hero que NO son el OR villano y NO son callers \u2192 foldearon
+    for (let i = 0; i < heroIdx; i++) {
+      const p = POSITIONS[i];
+      if (p !== sc.villainPos && !limpersSet.has(p)) foldedPositions.add(p);
     }
   }
 
@@ -2104,6 +2225,20 @@ function renderTable() {
       else if (pos === 'SB') stack -= 0.5; // completa
       else stack -= 1;
     }
+    if (sc.spotType === 'Sqz') {
+      if (isVillain) {
+        // Villano OR puso orSize
+        if (pos === 'SB') stack -= (orSize - 0.5);
+        else if (pos === 'BB') stack -= (orSize - 1);
+        else stack -= orSize;
+      }
+      if (isLimper) {
+        // Caller puso orSize
+        if (pos === 'SB') stack -= (orSize - 0.5);
+        else if (pos === 'BB') stack -= (orSize - 1);
+        else stack -= orSize;
+      }
+    }
     const stackStr = (stack % 1 === 0) ? stack.toFixed(0) : stack.toFixed(1);
 
     seat.innerHTML = `
@@ -2144,6 +2279,11 @@ function renderTable() {
     if (isLimper && sc.spotType === 'ROL') {
       chipAmount = 1;
       chipClass = 'chip blind-bb';
+    }
+    // En Sqz, villano OR muestra chip 3bb (amarillo) y los callers chip 3bb (amarillo)
+    if (sc.spotType === 'Sqz') {
+      if (isVillain) { chipAmount = 3; chipClass = 'chip raise'; }
+      if (isLimper)  { chipAmount = 3; chipClass = 'chip raise'; }
     }
 
     if (chipAmount > 0) {
@@ -2277,6 +2417,21 @@ function configureButtonsForScenario() {
     btnRaise.textContent = (sc.spotType === '4b') ? '4b (25bb)' : '25bb';
   }
 
+  // Modo Sqz: bot\u00f3n raise con tama\u00f1o seg\u00fan IP/OOP y nCallers
+  //   - Hero IP (LJ/HJ/CO/BTN):  Single \u2192 12bb, MW \u2192 15bb
+  //   - Hero OOP (SB/BB):         Single \u2192 15bb, MW \u2192 18bb
+  if (sc.spotType === 'Sqz') {
+    const heroIP = (sc.heroPos === 'LJ' || sc.heroPos === 'HJ' || sc.heroPos === 'CO' || sc.heroPos === 'BTN');
+    const nCallers = (sc.limpers || []).length;
+    let size;
+    if (nCallers >= 2) {
+      size = heroIP ? 15 : 18;
+    } else {
+      size = heroIP ? 12 : 15;
+    }
+    btnRaise.textContent = 'Sqz (' + size + 'bb)';
+  }
+
   // Modo 3b / CC Cash 100bb: botón raise con tamaño según IP/OOP postflop
   //   - Postflop order: SB, BB, UTG, UTG1, LJ, HJ, CO, BTN
   //   - Hero IP (actuará último postflop)  → 9bb
@@ -2347,6 +2502,10 @@ function showFeedback(userAction, correctAction, isOk) {
   } else if (sc.spotType === 'C3b4b' || sc.spotType === 'C3b' || sc.spotType === '4b') {
     const label = sc.spotType === '4b' ? '4b' : 'C3b';
     spotDesc = `<b>${label}</b> \u00b7 Hero abri\u00f3 desde <b>${sc.heroPos}</b>, villano <b>${sc.villainPos}</b> hizo 3b`;
+  } else if (sc.spotType === 'Sqz') {
+    const nCallers = (sc.limpers || []).length;
+    const callersList = (sc.limpers || []).join(', ');
+    spotDesc = `<b>Sqz</b> \u00b7 Hero en <b>${sc.heroPos}</b> vs OR de <b>${sc.villainPos}</b> + ${nCallers} caller${nCallers > 1 ? 's' : ''} (<b>${callersList}</b>)`;
   } else {
     spotDesc = `<b>${sc.spotType}</b> · Hero en <b>${sc.heroPos}</b>`;
   }
@@ -2923,6 +3082,60 @@ const RANGES_DATA = {
               "QJs","QTs","Q9s",
               "98s","87s","76s","65s","54s",
               "AQo","KQo"]
+    },
+
+    /* ---------- Squeeze (Cash 100bb) ----------
+       Raise = Sqz (tama\u00f1o depende de IP/OOP y nCallers)
+       Call  = vac\u00edo (solo squeeze o fold) */
+
+    // Sqz corto single: OR UTG/UTG1 + 1 caller
+    // El rango de raise es el mismo. El rango de call depende del Hero bucket (MP/LP/SB/BB).
+    "Sqz_EP": {
+      raise: ["AA","KK","QQ","JJ","AKs","AQs","AJs","KQs","KJs","QJs","AKo","AQo","KQo"],
+      call:  []
+    },
+    "Sqz_EP_MW": {
+      raise: ["AA","KK","QQ","JJ","AKs","AQs","AJs","KQs","KJs","QJs","AKo","AQo","KQo"],
+      call:  []
+    },
+    "Sqz_MLP": {
+      raise: ["AA","KK","QQ","JJ","TT","AKs","AQs","AJs","ATs","KQs","KJs","KTs","QJs","QTs","JTs","AKo","AQo","AJo","KQo"],
+      call:  []
+    },
+    "Sqz_MLP_MW": {
+      raise: ["AA","KK","QQ","JJ","TT","AKs","AQs","AJs","ATs","KQs","KJs","KTs","QJs","QTs","JTs","AKo","AQo","AJo","KQo"],
+      call:  []
+    },
+
+    // Rangos de CALL del Sqz por Hero bucket (compartidos entre todos los escenarios Sqz)
+    // MP = LJ/HJ, LP = CO/BTN, SB, BB
+    "Sqz_CALL_MP": {
+      call: ["TT","99","88","77","66","55","44","33","22",
+             "ATs","A9s","A8s","A7s","KTs","QTs","JTs",
+             "T9s","98s","87s","76s","65s","54s"],
+      raise: []
+    },
+    "Sqz_CALL_LP": {
+      call: ["TT","99","88","77","66","55","44","33","22",
+             "ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+             "KTs","K9s","QTs","Q9s","JTs","J9s","T9s","T8s",
+             "98s","87s","76s","65s","54s","AJo"],
+      raise: []
+    },
+    "Sqz_CALL_SB": {
+      call: ["TT","99","88","77","66","55","44","33","22",
+             "ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+             "KTs","QTs","JTs","T9s","98s","87s","76s","65s","54s"],
+      raise: []
+    },
+    "Sqz_CALL_BB": {
+      call: ["TT","99","88","77","66","55","44","33","22",
+             "ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+             "KTs","K9s","K8s","K7s","K6s","K5s","K4s","K3s","K2s",
+             "QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","T7s",
+             "98s","97s","87s","86s","76s","75s","65s","64s","54s","53s","43s",
+             "AJo","KJo"],
+      raise: []
     }
   }
 };
