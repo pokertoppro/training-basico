@@ -1257,14 +1257,14 @@ function validHeroesForCurrentSpot() {
 function refreshPosDropdown() {
   const valid = new Set(validHeroesForCurrentSpot());
 
-  // Mostrar / ocultar ítems según el spot y actualizar estado visual
+  // Mostrar / ocultar \u00edtems seg\u00fan el spot y actualizar estado visual.
+  // IMPORTANTE: NO borrar del set las posiciones no v\u00e1lidas en el spot actual \u2014
+  // solo las ocultamos, as\u00ed al volver a un spot donde s\u00ed son v\u00e1lidas quedan marcadas.
   document.querySelectorAll('#posList .dropdown-item').forEach(el => {
     const p = el.dataset.pos;
     const isValid = valid.has(p);
     el.style.display = isValid ? '' : 'none';
     el.classList.toggle('checked', isValid && selectedPositions.has(p));
-    // Si la posición no es válida, desmarcarla del set
-    if (!isValid && selectedPositions.has(p)) selectedPositions.delete(p);
   });
 
   const validCount = valid.size;
@@ -1776,14 +1776,9 @@ function newHand() {
     const heroesInAnyScenario = new Set();
     ROL_SCENARIOS.forEach(s => s.heroes.forEach(h => heroesInAnyScenario.add(h)));
     validHeroPositions = validHeroPositions.filter(p => heroesInAnyScenario.has(p));
-  } else if (selectedSpot === '4b') {
-    // 4b: Hero abrió. BB no puede ser Hero (no abre). BTN tampoco (no se trabaja aún).
-    validHeroPositions = validHeroPositions.filter(p => p !== 'BB' && p !== 'BTN');
-  } else if (selectedSpot === 'C3b4b') {
-    // C3b4b: Hero abrió desde EP/MP/LP(=CO)/SB. BB y BTN no son Hero válidos.
-    validHeroPositions = validHeroPositions.filter(p =>
-      p === 'UTG' || p === 'UTG1' || p === 'LJ' || p === 'HJ' || p === 'CO' || p === 'SB'
-    );
+  } else if (selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b') {
+    // C3b / 4b: Hero abri\u00f3. BB no abre nunca. Resto s\u00ed (incluido BTN para vs BLIND).
+    validHeroPositions = validHeroPositions.filter(p => p !== 'BB');
   }
 
   if (validHeroPositions.length === 0) {
@@ -1847,49 +1842,6 @@ function newHand() {
 
     rangeKey = scenario.rangeKey;
     range = resolveRange(rangeKey);
-  } else if (selectedSpot === '4b') {
-    // 4-bet: Hero abrió desde su posición y enfrenta un 3b del villano.
-    // Mapeo de posición del Hero a bucket:
-    //   EP = UTG, UTG1
-    //   MP = LJ, HJ
-    //   LP = CO
-    //   SB = SB
-    //   (BTN no se trabaja aún)
-    let bucket;
-    if (heroPos === 'UTG' || heroPos === 'UTG1') bucket = 'EP';
-    else if (heroPos === 'LJ' || heroPos === 'HJ') bucket = 'MP';
-    else if (heroPos === 'CO') bucket = 'LP';
-    else if (heroPos === 'SB') bucket = 'SB';
-    else return newHand(); // BTN y BB no aplican
-
-    // Determinar villano que 3-beteó y si Hero queda IP u OOP postflop:
-    //   - Villano IP postflop (a la izquierda del Hero, no Blind) → Hero OOP → sufijo _OOP
-    //   - Villano OOP postflop (Blind: SB o BB)                  → Hero IP  → sufijo _IP
-    // El Hero=SB solo tiene versión OOP (BB siempre actúa después postflop).
-    const heroIdxLocal = POSITIONS.indexOf(heroPos);
-    // Pool de posibles villanos: posiciones a la izquierda del Hero + Blinds (SB/BB)
-    let allVillains = POSITIONS.filter((p, i) => i > heroIdxLocal || p === 'SB' || p === 'BB');
-    allVillains = allVillains.filter(p => p !== heroPos);
-    if (selectedVillainPositions !== null) {
-      allVillains = allVillains.filter(p => selectedVillainPositions.has(p));
-    }
-    if (allVillains.length === 0) return newHand();
-
-    let chosenVillain = pickRandom(allVillains);
-    // Determinar tipo (IP/OOP)
-    const isBlind = (chosenVillain === 'SB' || chosenVillain === 'BB');
-    let suffix;
-    if (heroPos === 'SB') {
-      // Hero=SB siempre está OOP postflop (BB es el único villano posible)
-      suffix = 'OOP';
-    } else {
-      suffix = isBlind ? 'IP' : 'OOP';
-    }
-    villainPos = chosenVillain;
-    rangeKey = '4b_' + bucket + '_' + suffix;
-    range = resolveRange(rangeKey);
-    // Si el rango está vacío, intentar de nuevo (otra mano/villano)
-    if (!range || Object.keys(range).length === 0) return newHand();
   } else if (selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b') {
     // C3b / 4b (comparten mesa y rangos): Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n,
     // villano 3b. Respuesta correcta: Fold | Call | 4b (raise 25bb).
@@ -2199,12 +2151,8 @@ function renderTable() {
       chip.className = chipClass;
       // Posicionar la chip entre el seat y el centro (un poco hacia el centro)
       const centerX = 50, centerY = 50;
-      // Si el villano es BTN y hay bot\u00f3n D, mover la ficha m\u00e1s hacia el centro
-      // para que no se superponga con el bot\u00f3n D
-      const villainIsBTNseat = (isVillain && pos === 'BTN' && !isHero);
-      const factor = villainIsBTNseat ? 0.42 : 0.28;
-      let cx = coord.left + (centerX - coord.left) * factor;
-      let cy = coord.top + (centerY - coord.top) * factor;
+      let cx = coord.left + (centerX - coord.left) * 0.28;
+      let cy = coord.top + (centerY - coord.top) * 0.28;
       // Hero est\u00e1 abajo del todo con las cartas ENCIMA del label.
       // Si el chip es del Hero, colocarlo arriba de las cartas para no taparlas.
       if (isHero) {
@@ -2226,13 +2174,14 @@ function renderTable() {
   dealer.className = 'dealer-btn';
   let dcx, dcy;
   if (heroIsBTN) {
-    // Si el Hero está en BTN (slot 0 abajo-centro), colocar el D arriba de las cartas,
-    // ligeramente desplazado a la izquierda para que no tape y se lea que es el botón.
+    // Si el Hero est\u00e1 en BTN (slot 0 abajo-centro), colocar el D arriba de las cartas,
+    // ligeramente desplazado a la izquierda para que no tape y se lea que es el bot\u00f3n.
     dcx = btnCoord.left - 6;
     dcy = btnCoord.top - 15;
   } else {
-    dcx = btnCoord.left + (50 - btnCoord.left) * 0.18;
-    dcy = btnCoord.top + (50 - btnCoord.top) * 0.18;
+    // BTN es otro jugador: colocar el D a la IZQUIERDA del seat para no tapar su stack.
+    dcx = btnCoord.left - 5;
+    dcy = btnCoord.top;
   }
   dealer.style.left = dcx + '%';
   dealer.style.top = dcy + '%';
@@ -2322,10 +2271,10 @@ function configureButtonsForScenario() {
     btnPush.textContent = '4b Push';
   }
 
-  // Modo C3b y 4b combinado (Cash 100bb): 3 acciones \u2014 Fold | Call | 25bb
+  // Modo C3b / 4b (Cash 100bb): 3 acciones \u2014 Fold | Call | 25bb (o "4b (25bb)" en spot 4b)
   // Hero abri\u00f3 con una mano del rango OR de su posici\u00f3n, villano hizo 3b.
   if (sc.spotType === 'C3b4b' || sc.spotType === 'C3b' || sc.spotType === '4b') {
-    btnRaise.textContent = '25bb';
+    btnRaise.textContent = (sc.spotType === '4b') ? '4b (25bb)' : '25bb';
   }
 
   // Modo 3b / CC Cash 100bb: botón raise con tamaño según IP/OOP postflop
