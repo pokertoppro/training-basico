@@ -57,6 +57,7 @@
     gap: 18px;
     font-size: 13px;
     letter-spacing: 1px;
+    align-items: center;
   }
   .stat {
     display: flex;
@@ -65,6 +66,17 @@
   }
   .stat-val { font-family: 'Cinzel', serif; font-size: 20px; color: var(--gold); }
   .stat-lbl { font-size: 10px; color: rgba(244,233,200,.6); text-transform: uppercase; }
+  .lb-link {
+    color: #5a8fd6;
+    text-decoration: underline;
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    margin-right: 8px;
+    transition: color 0.15s;
+  }
+  .lb-link:hover { color: #7fa8e8; }
 
   /* ---------- LAYOUT ---------- */
   .main {
@@ -710,10 +722,27 @@
 <div class="topbar">
   <div class="brand">POKER TOP PRO <span>· Trainer</span></div>
   <div class="stats">
+    <a href="#" id="leaderboardLink" class="lb-link">Leader Board</a>
     <div class="stat"><div class="stat-val" id="statHands">0</div><div class="stat-lbl">Manos</div></div>
     <div class="stat"><div class="stat-val" id="statOk">0</div><div class="stat-lbl">Aciertos</div></div>
     <div class="stat"><div class="stat-val" id="statPct">—</div><div class="stat-lbl">%</div></div>
     <div class="stat"><div class="stat-val" id="statStreak">0</div><div class="stat-lbl">Racha</div></div>
+  </div>
+</div>
+
+<!-- Pop-up Leader Board (vacío por ahora) -->
+<div id="leaderboardModal" class="eval-overlay" style="display:none;">
+  <div class="eval-modal" style="max-width: 480px;">
+    <h2 style="color: #c9a449; margin-top: 0; text-align:center;">\u{1F3C6} Leader Board</h2>
+    <p style="color: #e8dcc0; text-align:center; margin: 24px 0; opacity: 0.7;">
+      Próximamente
+    </p>
+    <p style="color: #888; text-align:center; font-size: 12px; margin-bottom: 24px;">
+      Pronto podrás ver el ranking de usuarios con más manos y mejor % de aciertos.
+    </p>
+    <div style="text-align: center;">
+      <button class="secondary" id="btnCloseLeaderboard">Cerrar</button>
+    </div>
   </div>
 </div>
 
@@ -950,8 +979,8 @@ const SPOT_TYPES = [
     contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
   { code: '4b',     desc: '4-bet (misma mesa que C3b)',                 enabled: true,
     contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' },
-  { code: 'C4b',    desc: 'Facing 4-bet',                               enabled: false },
-  { code: 'Defend', desc: 'Defender BB vs Open',                        enabled: false }
+  { code: 'Defend', desc: 'Defender BB (mismo rango que CC)',          enabled: true,
+    contextCondition: () => selectedFormat === 'cash' && String(selectedStack) === '100' }
 ];
 
 // Devuelve true si el spot está habilitado en el contexto actual
@@ -989,8 +1018,8 @@ function getBaseKeysForSpot(spotCode) {
   if (spotCode === 'OR' || spotCode === 'OR_ADV') {
     const prefix = spotCode + '_';
     ['UTG','UTG1','LJ','HJ','CO','BTN','SB'].forEach(p => keys.push(prefix + p));
-  } else if (spotCode === '3b' || spotCode === 'CC') {
-    // CC comparte los mismos rangos que 3b
+  } else if (spotCode === '3b' || spotCode === 'CC' || spotCode === 'Defend') {
+    // CC y Defend comparten los mismos rangos que 3b
     if (typeof _3B_SCENARIOS !== 'undefined') {
       _3B_SCENARIOS.forEach(s => keys.push(s.rangeKey));
     }
@@ -1036,7 +1065,7 @@ function countRangesForContext(format, stack) {
   const savedFmt = selectedFormat, savedStk = selectedStack;
   selectedFormat = format; selectedStack = stack;
   let count = 0;
-  ['OR','OR_ADV','3b','CC','ROL','4b','C3b','C3b4b','Sqz'].forEach(spotCode => {
+  ['OR','OR_ADV','3b','CC','Defend','ROL','4b','C3b','C3b4b','Sqz'].forEach(spotCode => {
     count += countRangesForSpot(spotCode);
   });
   // Restaurar
@@ -1269,6 +1298,10 @@ function validHeroesForCurrentSpot() {
     _3B_SCENARIOS.forEach(s => s.heroes.forEach(h => heroes.add(h)));
     return POSITIONS.filter(p => heroes.has(p));
   }
+  if (selectedSpot === 'Defend') {
+    // Defend: Hero fijo en BB
+    return ['BB'];
+  }
   if (selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b') {
     // C3b / 4b: Hero abre. BB no abre nunca. Resto s\u00ed.
     return POSITIONS.filter(p => p !== 'BB');
@@ -1382,7 +1415,7 @@ function refreshVillainDropdown() {
 function refreshVillainVisibility() {
   const wrap = document.getElementById('villainWrap');
   // 3b y CC necesitan villano (CC usa los mismos rangos que 3b)
-  const needsVillain = (selectedSpot === '3b' || selectedSpot === 'CC' || selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b' || selectedSpot === 'Sqz');
+  const needsVillain = (selectedSpot === '3b' || selectedSpot === 'CC' || selectedSpot === 'Defend' || selectedSpot === 'C3b4b' || selectedSpot === 'C3b' || selectedSpot === '4b' || selectedSpot === 'Sqz');
   wrap.style.display = needsVillain ? '' : 'none';
 }
 
@@ -1692,8 +1725,8 @@ function pickBiasedHand(range, spotType) {
     });
   });
 
-  // Sesgo especial para CC: 70% call, 20% raise (3b), 10% fold
-  if (spotType === 'CC') {
+  // Sesgo especial para CC y Defend: 70% call, 20% raise (3b), 10% fold
+  if (spotType === 'CC' || spotType === 'Defend') {
     const hasCall = byAction.call.length > 0;
     const hasRaise = byAction.raise.length > 0;
     const hasFold = byAction.fold.length > 0;
@@ -1801,6 +1834,9 @@ function newHand() {
     const heroesInAnyScenario = new Set();
     _3B_SCENARIOS.forEach(s => s.heroes.forEach(h => heroesInAnyScenario.add(h)));
     validHeroPositions = validHeroPositions.filter(p => heroesInAnyScenario.has(p));
+  } else if (selectedSpot === 'Defend') {
+    // Defend: Hero fijo en BB
+    validHeroPositions = ['BB'];
 
     if (selectedVillainPositions !== null) {
       if (selectedVillainPositions.size === 0) {
@@ -1852,8 +1888,9 @@ function newHand() {
   } else if (selectedSpot === 'OR_ADV') {
     rangeKey = 'OR_ADV_' + heroPos;
     range = resolveRange(rangeKey);
-  } else if (selectedSpot === '3b' || selectedSpot === 'CC') {
-    // 3b y CC comparten los mismos rangos: Hero elige entre fold/call/3b
+  } else if (selectedSpot === '3b' || selectedSpot === 'CC' || selectedSpot === 'Defend') {
+    // 3b, CC y Defend comparten los mismos rangos
+    // Defend: Hero fijo en BB, villano puede ser cualquier posición OR
     const possibleScenarios = _3B_SCENARIOS.filter(s => s.heroes.includes(heroPos));
     // Filtrar por villanos que estén ANTES del Hero en la acción (excepto SB que puede estar después de BTN pero antes de BB)
     const validScenarios = possibleScenarios.filter(s => {
@@ -2082,7 +2119,7 @@ function renderTable() {
   const orSize = (selectedFormat === 'torneo') ? 2 : 3;
   // Tamaño del 3b: 9bb en cash (3x el OR), 7bb en torneo
   const threeBetSize = (selectedFormat === 'torneo') ? 7 : 9;
-  if (sc.spotType === '3b' || sc.spotType === 'CC') pot += orSize; // villano abrió
+  if (sc.spotType === '3b' || sc.spotType === 'CC' || sc.spotType === 'Defend') pot += orSize; // villano abrió
   if (sc.spotType === '4b') {
     // Hero abrió (orSize) y villano hizo 3b (threeBetSize)
     pot += orSize + threeBetSize;
@@ -2128,7 +2165,7 @@ function renderTable() {
   const foldedPositions = new Set();
   if (sc.spotType === 'OR') {
     for (let i = 0; i < heroIdx; i++) foldedPositions.add(POSITIONS[i]);
-  } else if (sc.spotType === '3b' || sc.spotType === 'CC') {
+  } else if (sc.spotType === '3b' || sc.spotType === 'CC' || sc.spotType === 'Defend') {
     for (let i = 0; i < heroIdx; i++) {
       const p = POSITIONS[i];
       if (p !== sc.villainPos) foldedPositions.add(p);
@@ -2188,7 +2225,7 @@ function renderTable() {
     let stack = parseFloat(selectedStack) || 100;
     if (pos === 'SB') stack -= 0.5;
     if (pos === 'BB') stack -= 1;
-    if (isVillain && (sc.spotType === '3b' || sc.spotType === 'CC')) {
+    if (isVillain && (sc.spotType === '3b' || sc.spotType === 'CC' || sc.spotType === 'Defend')) {
       // Villano abrió: si era Blind, descontar solo lo que falta tras la ciega
       if (pos === 'SB') stack -= (orSize - 0.5);
       else if (pos === 'BB') stack -= (orSize - 1);
@@ -2255,7 +2292,7 @@ function renderTable() {
     let chipClass = 'chip';
     if (pos === 'SB') { chipAmount = 0.5; chipClass = 'chip blind-sb'; }
     if (pos === 'BB') { chipAmount = 1; chipClass = 'chip blind-bb'; }
-    if (isVillain && (sc.spotType === '3b' || sc.spotType === 'CC')) { chipAmount = orSize; chipClass = 'chip raise'; }
+    if (isVillain && (sc.spotType === '3b' || sc.spotType === 'CC' || sc.spotType === 'Defend')) { chipAmount = orSize; chipClass = 'chip raise'; }
     // En 4b: Hero abrió a orSize bb, villano hizo 3b a 7bb (sobrescribe la ciega si aplica)
     if (sc.spotType === '4b') {
       if (isHero) { chipAmount = orSize; chipClass = 'chip raise'; }
@@ -2436,7 +2473,7 @@ function configureButtonsForScenario() {
   //   - Postflop order: SB, BB, UTG, UTG1, LJ, HJ, CO, BTN
   //   - Hero IP (actuará último postflop)  → 9bb
   //   - Hero OOP (actuará primero postflop) → 12bb
-  if ((sc.spotType === '3b' || sc.spotType === 'CC') && selectedFormat === 'cash' && String(selectedStack) === '100') {
+  if ((sc.spotType === '3b' || sc.spotType === 'CC' || sc.spotType === 'Defend') && selectedFormat === 'cash' && String(selectedStack) === '100') {
     const POSTFLOP = ['SB','BB','UTG','UTG1','LJ','HJ','CO','BTN'];
     const heroIdx = POSTFLOP.indexOf(sc.heroPos);
     const villIdx = POSTFLOP.indexOf(sc.villainPos);
@@ -2492,8 +2529,8 @@ function showFeedback(userAction, correctAction, isOk) {
     spotDesc = `<b>OR</b> desde <b>${sc.heroPos}</b>`;
   } else if (sc.spotType === 'OR_ADV') {
     spotDesc = `<b>OR Avanzado</b> desde <b>${sc.heroPos}</b>`;
-  } else if (sc.spotType === '3b' || sc.spotType === 'CC') {
-    const label = sc.spotType === 'CC' ? 'CC' : '3b';
+  } else if (sc.spotType === '3b' || sc.spotType === 'CC' || sc.spotType === 'Defend') {
+    const label = sc.spotType === 'Defend' ? 'Defend' : (sc.spotType === 'CC' ? 'CC' : '3b');
     spotDesc = `<b>${label}</b> · Hero en <b>${sc.heroPos}</b> vs <b>${sc.villainPos}</b> open 3bb`;
   } else if (sc.spotType === 'ROL') {
     const limpersList = (sc.limpers || []).join(', ');
@@ -3261,8 +3298,22 @@ function buildRange(spec) {
   return out;
 }
 
+/* ---------- LEADER BOARD (vacío por ahora) ---------- */
+function openLeaderboard() {
+  document.getElementById('leaderboardModal').style.display = 'flex';
+}
+function closeLeaderboard() {
+  document.getElementById('leaderboardModal').style.display = 'none';
+}
+
 /* ---------- ARRANQUE ---------- */
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  const lbLink = document.getElementById('leaderboardLink');
+  if (lbLink) lbLink.addEventListener('click', (e) => { e.preventDefault(); openLeaderboard(); });
+  const btnCloseLb = document.getElementById('btnCloseLeaderboard');
+  if (btnCloseLb) btnCloseLb.addEventListener('click', closeLeaderboard);
+});
 </script>
 
 </body>
