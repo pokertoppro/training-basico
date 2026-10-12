@@ -1156,6 +1156,117 @@
     .act-btn{min-height:58px;font-size:17px}
   }
 
+  /* ===== Mobile phones (≤ 480px): aggressive compaction so the oval fits ===== */
+  @media (max-width:480px) {
+    body { padding:8px; }
+    .topbar { padding:4px 2px 10px; }
+    .brand { font-size:15px; letter-spacing:1.5px; }
+    .brand span { font-size:11px; }
+    .stats { gap:4px; }
+    .stat { min-width:36px; padding-left:5px; }
+    .stat-val { font-size:15px; }
+    .stat-lbl { font-size:8px; letter-spacing:1px; }
+    .lb-link { padding:5px 8px; font-size:9px; letter-spacing:.5px; margin-right:4px; }
+
+    .table-wrap { padding:10px 6px; border-radius:14px; }
+    .table {
+      aspect-ratio: 16/12;
+      box-shadow:
+        0 0 0 3px #02111f,
+        0 0 0 5px rgba(233,189,70,.68),
+        0 0 0 8px #061827,
+        0 0 18px var(--ui-accent-soft),
+        inset 0 0 50px rgba(0,0,0,.5);
+    }
+    .table::before { inset:5px; }
+
+    /* Villain card backs: muy pequeños */
+    .card { width:22px; height:30px; border-radius:3px; }
+    .card.back { border-width:1px; }
+
+    /* Hero cards: compactas pero legibles */
+    .seat.hero .card:not(.back) {
+      width:34px; height:46px;
+      border-radius:5px;
+      border-width:1.5px;
+    }
+    .seat.hero .card:not(.back) .rank {
+      font-size:17px; top:13px;
+    }
+    .seat.hero .card:not(.back) .suit {
+      font-size:17px; top:28px;
+    }
+    .cards { gap:3px; }
+
+    /* Seat labels: más pequeños y ocultar stack en los que NO son Hero */
+    .seat-label {
+      min-width:38px; padding:2px 5px;
+      border-radius:4px;
+    }
+    .seat-label .pos { font-size:9px; letter-spacing:.3px; }
+    .seat:not(.hero) .seat-label .stack { display:none; }
+    .seat.hero .seat-label { padding:3px 10px; }
+    .seat.hero .seat-label .pos { font-size:10px; }
+    .seat.hero .seat-label .stack { font-size:10px; }
+
+    /* Chips: más pequeños y label en línea corta */
+    .chip { gap:3px; }
+    .chip .chip-disc {
+      width:20px; height:20px;
+      border-width:3px;
+    }
+    .chip .chip-disc::after { width:12px; height:12px; font-size:6px; }
+    .chip .chip-label { font-size:9px; }
+
+    /* Dealer button más pequeño */
+    .dealer-btn { width:18px; height:18px; font-size:9px; border-width:1px; }
+
+    /* Center overlay: action-label y line-ui compactos */
+    .action-label { font-size:8px; letter-spacing:2.5px; top:34%; }
+    .action-label::before,.action-label::after { width:16px; margin:0 4px 2px; }
+    .action-line-ui {
+      font-size:9.5px; padding:4px 9px;
+      max-width:78%; top:42%;
+      letter-spacing:0;
+    }
+    .pot {
+      font-size:10px; padding:3px 10px;
+      top:52%;
+    }
+
+    /* Botones de acción: más compactos */
+    .actions-bar { margin-top:12px; gap:8px; }
+    .act-btn {
+      min-height:48px; font-size:15px;
+      padding:10px 4px;
+      border-radius:9px;
+      letter-spacing:.3px;
+    }
+
+    /* Panel settings: full width al apilarse */
+    .panel { padding:14px; gap:10px; border-radius:14px; }
+    .panel h3 { font-size:10px; letter-spacing:1px; }
+    .dropdown-btn { padding:9px 10px; font-size:13px; }
+    .next-btn { min-height:42px; font-size:13px; }
+  }
+
+  /* ===== Pantallas muy chicas (≤ 360px): compactar aún más ===== */
+  @media (max-width:360px) {
+    .card { width:19px; height:26px; }
+    .seat.hero .card:not(.back) {
+      width:30px; height:40px;
+    }
+    .seat.hero .card:not(.back) .rank { font-size:15px; top:11px; }
+    .seat.hero .card:not(.back) .suit { font-size:15px; top:24px; }
+    .seat-label { min-width:32px; padding:2px 4px; }
+    .seat-label .pos { font-size:8px; }
+    .chip .chip-disc { width:17px; height:17px; border-width:2px; }
+    .chip .chip-label { font-size:8px; }
+    .action-line-ui { font-size:9px; max-width:84%; padding:3px 8px; }
+    .pot { font-size:9px; padding:3px 8px; }
+    .act-btn { font-size:13px; min-height:44px; }
+  }
+
   /* ===== v7: panel labels in Poker Top Pro gold ===== */
   .panel h3 {
     color: var(--gold) !important;
