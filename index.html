@@ -1250,6 +1250,27 @@
     .panel h3 { font-size:10px; letter-spacing:1px; }
     .dropdown-btn { padding:9px 10px; font-size:13px; }
     .next-btn { min-height:42px; font-size:13px; }
+
+    /* ===== Móvil: subir fichas y botón D ===== */
+    /* Las fichas se posicionan con transform translate(-50%, -50%) desde JS.
+       Aumentamos la Y negativa para subirlas (-50% → -140%) para liberar
+       la zona central donde están las cartas Hero. */
+    .chip {
+      transform: translate(-50%, -140%);
+    }
+    .dealer-btn {
+      transform: translate(-50%, -140%);
+    }
+
+    /* ===== Móvil: modal de resultado más arriba (cerca del header) ===== */
+    .feedback {
+      align-items: flex-start;
+      padding-top: 20px;
+    }
+    .feedback-box {
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
   }
 
   /* ===== Pantallas muy chicas / teléfonos reales (≤ 480px): compactar aún más ===== */
