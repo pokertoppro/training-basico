@@ -3120,6 +3120,27 @@ function configureButtonsForScenario() {
     const heroIP = heroIdx > villIdx;
     btnRaise.textContent = heroIP ? '9bb' : '12bb';
   }
+
+  // Modo ROL: botón raise con tamaño según IP/OOP postflop y nº de limpers
+  //   - Hero IP (después de TODOS los limpers en orden postflop):
+  //       1 limper → 4bb   ·   2 limpers → 5bb
+  //   - Hero OOP (al menos un limper es posterior al Hero postflop):
+  //       1 limper → 5bb   ·   2 limpers → 6bb
+  if (sc.spotType === 'ROL') {
+    const POSTFLOP = ['SB','BB','UTG','UTG1','LJ','HJ','CO','BTN'];
+    const heroIdx = POSTFLOP.indexOf(sc.heroPos);
+    const limpers = sc.limpers || [];
+    const nLimpers = limpers.length;
+    // Hero IP si todos los limpers tienen índice postflop MENOR que el Hero
+    const heroIP = limpers.every(lp => POSTFLOP.indexOf(lp) < heroIdx);
+    let size;
+    if (nLimpers >= 2) {
+      size = heroIP ? 5 : 6;
+    } else {
+      size = heroIP ? 4 : 5;
+    }
+    btnRaise.textContent = size + 'bb';
+  }
 }
 
 function handleAction(action) {
