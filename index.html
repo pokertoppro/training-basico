@@ -2304,18 +2304,32 @@ function dealCardsForHand(handKeyStr) {
  *   75% CALL · 25% RAISE (3b). Sin fold.
  */
 function pickBiasedHand(range, spotType) {
-  // Clasificar todas las 169 manos según acción
+  // Clasificar manos según acción.
+  //   - Para C3b / 4b / C3b4b el `range` ya viene filtrado al OR del Hero
+  //     (manos con las que efectivamente abrió). Iteramos SOLO esas manos
+  //     para no inventar un pool 'fold' con manos que nunca abrimos
+  //     (ej.: Q6o en UTG). Fuera del OR no existe spot.
+  //   - Resto de spots: iteramos las 169 manos y las ausentes caen a 'fold'.
   const byAction = { raise: [], call: [], push: [], fold: [] };
-  RANKS.forEach((r1, i) => {
-    RANKS.forEach((r2, j) => {
-      let label;
-      if (i === j) label = r1 + r2;
-      else if (i < j) label = r1 + r2 + 's';
-      else label = r2 + r1 + 'o';
-      const action = range?.[label] || 'fold';
-      byAction[action].push(label);
+  const isC3bLike = (spotType === '4b' || spotType === 'C3b' || spotType === 'C3b4b');
+  if (isC3bLike) {
+    Object.keys(range || {}).forEach(label => {
+      if (label === '__overrides' || label === '__pct') return;
+      const action = range[label] || 'fold';
+      if (byAction[action]) byAction[action].push(label);
     });
-  });
+  } else {
+    RANKS.forEach((r1, i) => {
+      RANKS.forEach((r2, j) => {
+        let label;
+        if (i === j) label = r1 + r2;
+        else if (i < j) label = r1 + r2 + 's';
+        else label = r2 + r1 + 'o';
+        const action = range?.[label] || 'fold';
+        byAction[action].push(label);
+      });
+    });
+  }
 
   // Sesgo especial para CC y Defend: 70% call, 20% raise (3b), 10% fold
   if (spotType === 'CC' || spotType === 'Defend') {
