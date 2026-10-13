@@ -1251,24 +1251,23 @@
     .dropdown-btn { padding:9px 10px; font-size:13px; }
     .next-btn { min-height:42px; font-size:13px; }
 
-    /* ===== Móvil: subir fichas y botón D ===== */
+    /* ===== Móvil: subir fichas y botón D (versión agresiva) ===== */
     /* Las fichas se posicionan con transform translate(-50%, -50%) desde JS.
-       Aumentamos la Y negativa para subirlas (-50% → -140%) para liberar
-       la zona central donde están las cartas Hero. */
+       Subimos más para despejar completamente la zona Hero. */
     .chip {
-      transform: translate(-50%, -140%);
+      transform: translate(-50%, -230%);
     }
     .dealer-btn {
-      transform: translate(-50%, -140%);
+      transform: translate(-50%, -260%);
     }
 
-    /* ===== Móvil: modal de resultado más arriba (cerca del header) ===== */
+    /* ===== Móvil: modal de resultado casi pegado al logo ===== */
     .feedback {
       align-items: flex-start;
-      padding-top: 20px;
+      padding-top: 2px;
     }
     .feedback-box {
-      max-height: calc(100vh - 40px);
+      max-height: calc(100vh - 10px);
       overflow-y: auto;
     }
   }
