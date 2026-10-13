@@ -1251,39 +1251,14 @@
     .dropdown-btn { padding:9px 10px; font-size:13px; }
     .next-btn { min-height:42px; font-size:13px; }
 
-    /* ===== Móvil: fichas y botón D ===== */
-    /* Las fichas de ABAJO (zona Hero) quedan en su posición normal (translate -50%).
-       Solo las fichas de ARRIBA se mueven hacia el centro (bajarlas) para que no
-       queden pegadas a los dorsos de los villanos superiores.
-       El motor pone style="top: XX%" en cada ficha; usamos un attribute selector
-       para capturar top entre 0% y 39% (zona superior de la mesa). */
-
-    /* Default: posición normal del JS */
-    .chip, .dealer-btn {
-      transform: translate(-50%, -50%);
+    /* ===== Móvil: subir fichas y botón D (versión agresiva) ===== */
+    /* Las fichas se posicionan con transform translate(-50%, -50%) desde JS.
+       Subimos más para despejar completamente la zona Hero. */
+    .chip {
+      transform: translate(-50%, -230%);
     }
-
-    /* Fichas de ARRIBA (top: 0–39%) → bajarlas SÓLO lo necesario
-       para quedar debajo del label de la posición (no al centro). */
-    .chip[style*="top: 1"],
-    .chip[style*="top: 2"],
-    .chip[style*="top: 3"],
-    .chip[style*="top: 0"] {
-      transform: translate(-50%, 50%);
-    }
-    .dealer-btn[style*="top: 1"],
-    .dealer-btn[style*="top: 2"],
-    .dealer-btn[style*="top: 3"],
-    .dealer-btn[style*="top: 0"] {
-      transform: translate(-50%, 50%);
-    }
-
-    /* Dealer button cuando el Hero es BTN (D cerca del Hero, zona inferior-centro).
-       En móvil el cálculo del motor cae encima de la primera carta Hero.
-       Lo movemos a la DERECHA para quedar al lado de la segunda carta. */
-    .dealer-btn[style*="top: 7"],
-    .dealer-btn[style*="top: 8"] {
-      transform: translate(400%, -50%);
+    .dealer-btn {
+      transform: translate(-50%, -260%);
     }
 
     /* ===== Móvil: modal de resultado casi pegado al logo ===== */
@@ -1294,62 +1269,7 @@
     .feedback-box {
       max-height: calc(100vh - 10px);
       overflow-y: auto;
-      padding: 14px 16px;
-      max-width: 95vw;
     }
-
-    /* ===== Móvil: compactar contenido del modal para que entre sin scroll ===== */
-    .result-banner {
-      font-size: 18px;
-      letter-spacing: 1.5px;
-      padding: 9px;
-      margin-bottom: 10px;
-    }
-    .result-detail {
-      font-size: 12px;
-      margin-bottom: 10px;
-      line-height: 1.4;
-    }
-    .result-detail b { font-size: 13px; }
-    .matrix-title {
-      font-size: 10px;
-      margin-bottom: 5px;
-      letter-spacing: 1px;
-    }
-    .matrix {
-      gap: 1px;
-      margin-bottom: 8px;
-    }
-    .matrix-cell {
-      font-size: 7px;
-    }
-    .legend {
-      gap: 8px;
-      font-size: 9px;
-    }
-    .legend-swatch { width: 9px; height: 9px; }
-    .modal-actions { gap: 6px; margin-top: 10px; }
-    .modal-actions button {
-      font-size: 11px;
-      padding: 9px 6px;
-      letter-spacing: 0.5px;
-    }
-
-    /* Modal evaluación final también compacta */
-    .eval-donut-wrap {
-      gap: 14px;
-      padding: 10px;
-      margin-bottom: 14px;
-    }
-    #evalDonut { width: 120px; height: 120px; }
-    .eval-section { margin-bottom: 14px; }
-    .eval-section-title { font-size: 10px; margin-bottom: 8px; }
-    .eval-bar-row { grid-template-columns: 50px 1fr 60px; font-size: 10px; }
-    .eval-bar-label { font-size: 10px; }
-    .eval-bar-track { height: 12px; }
-    .eval-bar-meta { font-size: 10px; }
-    .eval-kv .k { font-size: 10px; }
-    .eval-kv .v { font-size: 15px; }
   }
 
   /* ===== Pantallas muy chicas / teléfonos reales (≤ 480px): compactar aún más ===== */
