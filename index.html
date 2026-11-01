@@ -518,6 +518,68 @@
   .modal-actions .primary { background: var(--gold); color: var(--ink); border: none; }
   .modal-actions .secondary { background: transparent; color: var(--cream); border: 1px solid rgba(244,233,200,.3); }
 
+  /* ---------- LEADER BOARD ---------- */
+  .lb-tabs {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin: 16px 0;
+    flex-wrap: wrap;
+  }
+  .lb-tab {
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid rgba(229,183,53,.3);
+    color: rgba(244,233,200,.70);
+    font-family: 'Roboto Condensed', sans-serif;
+    letter-spacing: 1.5px;
+    font-size: 12px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all .15s;
+  }
+  .lb-tab:hover { color: var(--cream); border-color: rgba(229,183,53,.6); }
+  .lb-tab.active {
+    background: rgba(229,183,53,.15);
+    color: var(--gold);
+    border-color: var(--gold);
+  }
+  .lb-content { min-height: 240px; padding: 0 4px; }
+  .lb-status {
+    text-align: center;
+    color: rgba(244,233,200,.65);
+    padding: 60px 20px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .lb-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Roboto Condensed', sans-serif;
+    color: var(--cream);
+  }
+  .lb-table th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(244,233,200,.55);
+    border-bottom: 1px solid rgba(229,183,53,.25);
+  }
+  .lb-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    font-size: 14px;
+  }
+  .lb-table .lb-rank { width: 36px; text-align: center; color: var(--gold); font-weight: 700; }
+  .lb-table .lb-num  { text-align: right; width: 72px; }
+  .lb-table .lb-name { color: var(--cream); }
+  .lb-table tr.lb-top1 .lb-rank { color: #ffd54a; }
+  .lb-table tr.lb-top2 .lb-rank { color: #d0d0d0; }
+  .lb-table tr.lb-top3 .lb-rank { color: #cd7f32; }
+
   .hint {
     font-size: 11px;
     color: rgba(244,233,200,.5);
@@ -1310,22 +1372,36 @@
   </div>
 </div>
 
-<!-- Pop-up Leader Board — mismo contenedor que Evaluación Final -->
+<!-- Pop-up Leader Board — ranking global desde Wix backend -->
 <div class="feedback" id="leaderboardModal">
-  <div class="feedback-box" style="max-width: 680px;">
+  <div class="feedback-box" style="max-width: 720px;">
     <div class="result-banner ok" style="color:var(--gold); border-color:var(--gold); background:rgba(229,183,53,.10);">
       🏆 LEADER BOARD
     </div>
 
-    <div class="eval-donut-wrap" style="min-height:180px; justify-content:center; text-align:center;">
-      <div style="max-width:430px;">
-        <div style="font-family:'Cinzel',serif; font-size:22px; color:var(--cream); letter-spacing:2px; margin-bottom:12px;">
-          PRÓXIMAMENTE
-        </div>
-        <div style="color:rgba(244,233,200,.70); font-size:14px; line-height:1.6;">
-          Pronto podrás ver el ranking de usuarios con más manos y mejor porcentaje de aciertos.
-        </div>
-      </div>
+    <!-- Tabs de rango temporal -->
+    <div class="lb-tabs" id="lbTabs">
+      <button class="lb-tab" data-range="today">Hoy</button>
+      <button class="lb-tab" data-range="week">Semana</button>
+      <button class="lb-tab" data-range="month">Mes</button>
+      <button class="lb-tab active" data-range="all">All Time</button>
+    </div>
+
+    <!-- Estado + tabla -->
+    <div class="lb-content">
+      <div id="lbStatus" class="lb-status">Cargando ranking…</div>
+      <table class="lb-table" id="lbTable" style="display:none;">
+        <thead>
+          <tr>
+            <th class="lb-rank">#</th>
+            <th class="lb-name">Jugador</th>
+            <th class="lb-num">Manos</th>
+            <th class="lb-num">%</th>
+            <th class="lb-num">Racha</th>
+          </tr>
+        </thead>
+        <tbody id="lbTbody"></tbody>
+      </table>
     </div>
 
     <div class="modal-actions">
@@ -3400,6 +3476,9 @@ function openEvalModal() {
   });
 
   document.getElementById('evalModal').classList.add('show');
+
+  // Guardar sesión en el Leader Board (via parent Wix, si está embebido)
+  try { sendSessionToParent(); } catch (e) {}
 }
 
 function groupBy(arr, keyFn) {
@@ -3973,13 +4052,153 @@ function buildRange(spec) {
   return out;
 }
 
-/* ---------- LEADER BOARD (vacío por ahora) ---------- */
+/* ---------- LEADER BOARD (con backend Wix vía postMessage) ----------
+   El trainer está embebido como iframe (#html1) dentro de una página Wix.
+   La página Wix tiene código Velo que escucha mensajes y llama al backend:
+     - LB_GET  { range, limit, requestId }  → LB_GET_OK { result: [...] }
+     - LB_SAVE { payload, requestId }       → LB_SAVE_OK { result: {ok, id} }
+   Si el trainer corre fuera de Wix (test local), el parent no responde y
+   mostramos un mensaje de "no se pudo cargar". */
+const LB_STATE = { currentRange: 'all', pending: null, lastSentHash: null };
+
+function sendToParent(msg) {
+  if (window.parent && window.parent !== window) {
+    try { window.parent.postMessage(msg, '*'); } catch (e) {}
+  }
+}
+
 function openLeaderboard() {
   document.getElementById('leaderboardModal').classList.add('show');
+  requestLeaderboard(LB_STATE.currentRange);
 }
 function closeLeaderboard() {
   document.getElementById('leaderboardModal').classList.remove('show');
 }
+
+function requestLeaderboard(range) {
+  LB_STATE.currentRange = range;
+  const status = document.getElementById('lbStatus');
+  const table  = document.getElementById('lbTable');
+  if (table) table.style.display = 'none';
+  if (status) {
+    status.style.display = '';
+    status.textContent = 'Cargando ranking…';
+  }
+  const requestId = 'lb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  LB_STATE.pending = requestId;
+  sendToParent({ type: 'LB_GET', range, limit: 20, requestId });
+
+  // Timeout por si el parent no responde (fuera de Wix o problema de red)
+  setTimeout(() => {
+    if (LB_STATE.pending === requestId && status && status.style.display !== 'none') {
+      status.textContent = 'No se pudo cargar el ranking. Entra desde la web de Poker Top Pro o comprueba tu conexión.';
+    }
+  }, 8000);
+}
+
+function renderLeaderboard(items) {
+  LB_STATE.pending = null;
+  const status = document.getElementById('lbStatus');
+  const table  = document.getElementById('lbTable');
+  const tbody  = document.getElementById('lbTbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (!items || items.length === 0) {
+    if (table) table.style.display = 'none';
+    if (status) {
+      status.style.display = '';
+      status.textContent = 'Aún no hay partidas en este período. ¡Sé el primero!';
+    }
+    return;
+  }
+
+  items.forEach((it, i) => {
+    const tr = document.createElement('tr');
+    if (i === 0) tr.classList.add('lb-top1');
+    else if (i === 1) tr.classList.add('lb-top2');
+    else if (i === 2) tr.classList.add('lb-top3');
+    const name = _lbEscape(it.memberName || 'Jugador');
+    const pct  = (it.porcentaje != null ? it.porcentaje : 0);
+    const racha = (it.racha != null ? it.racha : 0);
+    const manos = (it.manos != null ? it.manos : 0);
+    tr.innerHTML =
+      '<td class="lb-rank">' + (i + 1) + '</td>' +
+      '<td class="lb-name">' + name + '</td>' +
+      '<td class="lb-num">'  + manos + '</td>' +
+      '<td class="lb-num">'  + pct + '%</td>' +
+      '<td class="lb-num">'  + racha + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  if (status) status.style.display = 'none';
+  if (table)  table.style.display  = '';
+}
+
+function _lbEscape(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* Envía la sesión actual al parent para que la guarde en Wix.
+   Se llama al abrir Evaluación Final. Dedupe por hash para no reenviar lo mismo. */
+function sendSessionToParent() {
+  const h = (typeof state !== 'undefined' && state.history) ? state.history : [];
+  if (h.length === 0) return;
+  const manos = h.length;
+  const aciertos = h.filter(x => x.ok).length;
+  let bestStreak = 0, cur = 0;
+  h.forEach(x => { if (x.ok) { cur++; bestStreak = Math.max(bestStreak, cur); } else cur = 0; });
+  const racha = bestStreak;
+  const hash = manos + '-' + aciertos + '-' + racha;
+  if (LB_STATE.lastSentHash === hash) return;
+  LB_STATE.lastSentHash = hash;
+  sendToParent({
+    type: 'LB_SAVE',
+    requestId: 'save-' + Date.now(),
+    payload: { manos, aciertos, racha }
+  });
+}
+
+/* Listener global para respuestas del parent (Wix) */
+window.addEventListener('message', (event) => {
+  const msg = event.data || {};
+  if (!msg || typeof msg !== 'object' || !msg.type) return;
+  if (msg.type === 'LB_GET_OK') {
+    renderLeaderboard(msg.result || []);
+  } else if (msg.type === 'LB_GET_ERR') {
+    const status = document.getElementById('lbStatus');
+    if (status) {
+      status.style.display = '';
+      if (msg.error === 'not-logged-in') {
+        status.textContent = 'Inicia sesión en Poker Top Pro para ver el ranking.';
+      } else {
+        status.textContent = 'No se pudo cargar el ranking. Inténtalo de nuevo.';
+      }
+    }
+  } else if (msg.type === 'LB_SAVE_ERR') {
+    if (msg.error === 'not-logged-in') {
+      // Si queremos avisar al usuario, aquí podemos mostrar un toast suave.
+      // De momento solo lo registramos en consola.
+      // console.log('[LB] Sesión no guardada: usuario no logueado');
+    }
+  }
+});
+
+/* Handlers de tabs de rango temporal */
+document.addEventListener('DOMContentLoaded', () => {
+  const tabs = document.getElementById('lbTabs');
+  if (tabs) {
+    tabs.querySelectorAll('.lb-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabs.querySelectorAll('.lb-tab').forEach(x => x.classList.remove('active'));
+        btn.classList.add('active');
+        requestLeaderboard(btn.dataset.range);
+      });
+    });
+  }
+});
 
 /* ---------- ARRANQUE ---------- */
 document.addEventListener('DOMContentLoaded', () => {
