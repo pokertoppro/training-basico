@@ -4285,4 +4285,177 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   const btnRefresh = document.getElementById('btnRefreshLB');
   if (btnRefresh) {
-    btnR
+    btnRefresh.addEventListener('click', () => {
+      // Fuerza re-envío de la sesión (invalidando el hash) y relee el ranking
+      LB_STATE.lastSentHash = null;
+      try { sendSessionToParent(); } catch (e) {}
+      setTimeout(() => requestLeaderboard(LB_STATE.currentRange, LB_STATE.currentSpot), 400);
+    });
+  }
+  const btnShare = document.getElementById('btnShareLB');
+  if (btnShare) {
+    btnShare.addEventListener('click', () => { shareSession().catch(e => console.log('[Share]', e)); });
+  }
+});
+
+/* ---------- COMPARTIR SESIÓN (imagen + Web Share API) ----------
+   Genera un canvas vertical 1080x1920 (formato Stories) con las stats de la
+   sesión actual y lo comparte vía navigator.share(). En móvil con IG
+   instalado, el usuario puede elegir Instagram desde el picker nativo.
+   Fallback: descarga la imagen. */
+async function shareSession() {
+  const h = (typeof state !== 'undefined' && state.history) ? state.history : [];
+  if (h.length === 0) {
+    alert('Juega al menos una mano antes de compartir.');
+    return;
+  }
+  const manos = h.length;
+  const aciertos = h.filter(x => x.ok).length;
+  const pct = Math.round((aciertos / manos) * 100);
+  let bestStreak = 0, cur = 0;
+  h.forEach(x => { if (x.ok) { cur++; bestStreak = Math.max(bestStreak, cur); } else cur = 0; });
+  const racha = bestStreak;
+  const score = Math.round(((manos * pct + 50 * 50) / (manos + 50)) * 10) / 10;
+
+  // Nivel dinámico según rendimiento (racha > % alto > % medio > volumen bajo > % bajo)
+  let levelEmoji, levelText;
+  if (racha >= 10)       { levelEmoji = '🔥🔥'; levelText = 'EN LLAMAS'; }
+  else if (racha >= 5)   { levelEmoji = '🔥';             levelText = 'En racha'; }
+  else if (pct >= 90)    { levelEmoji = '👑';             levelText = 'Dominando'; }
+  else if (pct >= 75)    { levelEmoji = '💪';             levelText = 'Sólido'; }
+  else if (pct >= 50)    { levelEmoji = '📈';             levelText = 'Mejorando'; }
+  else if (manos < 10)   { levelEmoji = '🎯';             levelText = 'Calentando'; }
+  else                   { levelEmoji = '💭';             levelText = 'Estudiando'; }
+
+  // Canvas 1080x1920 (formato Stories)
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const ctx = canvas.getContext('2d');
+
+  // Fondo gradient oscuro
+  const bg = ctx.createLinearGradient(0, 0, 0, 1920);
+  bg.addColorStop(0, '#0a0f14');
+  bg.addColorStop(1, '#020408');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 1080, 1920);
+
+  // Borde dorado
+  ctx.strokeStyle = '#e5b735';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(30, 30, 1020, 1860);
+  ctx.strokeStyle = 'rgba(229,183,53,.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(50, 50, 980, 1820);
+
+  ctx.textAlign = 'center';
+
+  // Header: POKER TOP PRO
+  ctx.fillStyle = '#e5b735';
+  ctx.font = 'bold 76px Georgia, serif';
+  ctx.fillText('POKER TOP PRO', 540, 260);
+
+  ctx.fillStyle = '#f4e9c8';
+  ctx.font = '40px Georgia, serif';
+  ctx.fillText('· TRAINER PREFLOP ·', 540, 320);
+
+  // Línea separadora
+  ctx.strokeStyle = 'rgba(229,183,53,.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(240, 380);
+  ctx.lineTo(840, 380);
+  ctx.stroke();
+
+  // Nivel: emoji grande + texto
+  ctx.font = '160px sans-serif';
+  ctx.fillText(levelEmoji, 540, 620);
+  ctx.fillStyle = '#e5b735';
+  ctx.font = 'bold 72px Georgia, serif';
+  ctx.fillText(levelText, 540, 730);
+
+  // 4 cards de stats (grid 2x2)
+  const cards = [
+    { label: 'MANOS',    value: String(manos) },
+    { label: 'ACIERTOS', value: pct + '%' },
+    { label: 'SCORE',    value: score.toFixed(1) },
+    { label: 'RACHA',    value: String(racha) }
+  ];
+  const cardW = 440, cardH = 240, gap = 28;
+  const startX = (1080 - (2 * cardW + gap)) / 2;
+  const startY = 870;
+  for (let i = 0; i < cards.length; i++) {
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = startX + col * (cardW + gap);
+    const y = startY + row * (cardH + gap);
+
+    ctx.fillStyle = 'rgba(10,15,20,.85)';
+    ctx.fillRect(x, y, cardW, cardH);
+    ctx.strokeStyle = 'rgba(229,183,53,.55)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, cardW, cardH);
+
+    ctx.fillStyle = '#f4e9c8';
+    ctx.font = 'bold 110px Georgia, serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(cards[i].value, x + cardW / 2, y + cardH / 2 - 10);
+
+    ctx.fillStyle = 'rgba(244,233,200,.6)';
+    ctx.font = '28px Georgia, serif';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(cards[i].label, x + cardW / 2, y + cardH - 32);
+  }
+
+  // Footer: URL
+  ctx.fillStyle = '#e5b735';
+  ctx.font = 'bold 46px Georgia, serif';
+  ctx.fillText('pokertoppro.com', 540, 1800);
+
+  // Convertir a blob y compartir
+  await new Promise(resolve => {
+    canvas.toBlob(async (blob) => {
+      if (!blob) { resolve(); return; }
+      const file = new File([blob], 'poker-top-pro-sesion.png', { type: 'image/png' });
+
+      const shareText = levelEmoji + ' ' + levelText + ' en Poker Top Pro Trainer\n'
+        + manos + ' manos · ' + pct + '% aciertos · racha ' + racha + '\n'
+        + 'pokertoppro.com';
+
+      const shareData = { files: [file], title: 'Mi sesión en Poker Top Pro', text: shareText };
+
+      try {
+        if (navigator.canShare && navigator.canShare(shareData) && navigator.share) {
+          await navigator.share(shareData);
+        } else {
+          // Fallback: descarga la imagen
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'poker-top-pro-sesion.png';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+          // Copiar texto al portapapeles si está disponible
+          try { await navigator.clipboard.writeText(shareText); } catch (e) {}
+        }
+      } catch (e) {
+        // Usuario canceló el share — silencioso
+      }
+      resolve();
+    }, 'image/png');
+  });
+}
+
+/* ---------- ARRANQUE ---------- */
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  const lbLink = document.getElementById('leaderboardLink');
+  if (lbLink) lbLink.addEventListener('click', (e) => { e.preventDefault(); openLeaderboard(); });
+  const btnCloseLb = document.getElementById('btnCloseLeaderboard');
+  if (btnCloseLb) btnCloseLb.addEventListener('click', closeLeaderboard);
+});
+</script>
+
+</body>
+</html>
