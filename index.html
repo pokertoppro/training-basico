@@ -1452,6 +1452,7 @@
             <th class="lb-name">Jugador</th>
             <th class="lb-num">Manos</th>
             <th class="lb-num">%</th>
+            <th class="lb-num">Score</th>
             <th class="lb-num">Racha</th>
           </tr>
         </thead>
@@ -1460,7 +1461,9 @@
     </div>
 
     <div class="modal-actions">
-      <button class="primary" id="btnCloseLeaderboard">Cerrar</button>
+      <button class="secondary" id="btnCloseLeaderboard">Cerrar</button>
+      <button class="secondary" id="btnRefreshLB">↻ Actualizar</button>
+      <button class="primary" id="btnShareLB">Compartir</button>
     </div>
   </div>
 </div>
@@ -4210,11 +4213,13 @@ function renderLeaderboard(items) {
     const pct  = (it.porcentaje != null ? it.porcentaje : 0);
     const racha = (it.racha != null ? it.racha : 0);
     const manos = (it.manos != null ? it.manos : 0);
+    const score = (it.score != null) ? (Math.round(it.score * 10) / 10).toFixed(1) : '—';
     tr.innerHTML =
       '<td class="lb-rank">' + (i + 1) + '</td>' +
       '<td class="lb-name">' + name + '</td>' +
       '<td class="lb-num">'  + manos + '</td>' +
       '<td class="lb-num">'  + pct + '%</td>' +
+      '<td class="lb-num">'  + score + '</td>' +
       '<td class="lb-num">'  + racha + '</td>';
     tbody.appendChild(tr);
   });
@@ -4320,6 +4325,23 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.classList.add('active');
         requestLeaderboard(LB_STATE.currentRange, btn.dataset.spot);
       });
+    });
+  }
+  // Botones Refresh y Compartir del Leader Board
+  const btnRefresh = document.getElementById('btnRefreshLB');
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', () => {
+      LB_STATE.lastSentHash = null;
+      try { sendSessionToParent(); } catch (e) {}
+      setTimeout(() => requestLeaderboard(LB_STATE.currentRange, LB_STATE.currentSpot), 400);
+    });
+  }
+  const btnShareLB = document.getElementById('btnShareLB');
+  if (btnShareLB) {
+    btnShareLB.addEventListener('click', () => {
+      // Cerrar el modal del Leader Board y abrir el ShareStory
+      closeLeaderboard();
+      openShareStory();
     });
   }
 });
