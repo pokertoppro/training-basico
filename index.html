@@ -4069,7 +4069,11 @@ function sendToParent(msg) {
 
 function openLeaderboard() {
   document.getElementById('leaderboardModal').classList.add('show');
-  requestLeaderboard(LB_STATE.currentRange);
+  // Envía la sesión actual al parent (upsert) antes de pedir el ranking,
+  // para que el usuario se vea reflejado al instante sin pulsar Evaluación Final.
+  try { sendSessionToParent(); } catch (e) {}
+  // Pequeño delay para dar tiempo al backend a hacer el upsert antes de leer.
+  setTimeout(() => requestLeaderboard(LB_STATE.currentRange), 400);
 }
 function closeLeaderboard() {
   document.getElementById('leaderboardModal').classList.remove('show');
