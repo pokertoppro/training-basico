@@ -1436,6 +1436,7 @@
             <th class="lb-name">Jugador</th>
             <th class="lb-num">Manos</th>
             <th class="lb-num">%</th>
+            <th class="lb-num">Score</th>
             <th class="lb-num">Racha</th>
           </tr>
         </thead>
@@ -1443,8 +1444,10 @@
       </table>
     </div>
 
-    <div class="modal-actions">
-      <button class="primary" id="btnCloseLeaderboard">Cerrar</button>
+    <div class="modal-actions lb-actions">
+      <button class="secondary" id="btnCloseLeaderboard">Cerrar</button>
+      <button class="secondary" id="btnRefreshLB">↻ Actualizar</button>
+      <button class="primary" id="btnShareLB">Compartir</button>
     </div>
   </div>
 </div>
@@ -4166,11 +4169,13 @@ function renderLeaderboard(items) {
     const pct  = (it.porcentaje != null ? it.porcentaje : 0);
     const racha = (it.racha != null ? it.racha : 0);
     const manos = (it.manos != null ? it.manos : 0);
+    const score = (it.score != null) ? (Math.round(it.score * 10) / 10).toFixed(1) : '—';
     tr.innerHTML =
       '<td class="lb-rank">' + (i + 1) + '</td>' +
       '<td class="lb-name">' + name + '</td>' +
       '<td class="lb-num">'  + manos + '</td>' +
       '<td class="lb-num">'  + pct + '%</td>' +
+      '<td class="lb-num">'  + score + '</td>' +
       '<td class="lb-num">'  + racha + '</td>';
     tbody.appendChild(tr);
   });
@@ -4256,7 +4261,7 @@ window.addEventListener('message', (event) => {
   }
 });
 
-/* Handlers de tabs de rango temporal y chips de spot */
+/* Handlers de tabs de rango temporal, chips de spot y botones del modal */
 document.addEventListener('DOMContentLoaded', () => {
   const tabs = document.getElementById('lbTabs');
   if (tabs) {
@@ -4278,17 +4283,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
-});
-
-/* ---------- ARRANQUE ---------- */
-document.addEventListener('DOMContentLoaded', () => {
-  init();
-  const lbLink = document.getElementById('leaderboardLink');
-  if (lbLink) lbLink.addEventListener('click', (e) => { e.preventDefault(); openLeaderboard(); });
-  const btnCloseLb = document.getElementById('btnCloseLeaderboard');
-  if (btnCloseLb) btnCloseLb.addEventListener('click', closeLeaderboard);
-});
-</script>
-
-</body>
-</html>
+  const btnRefresh = document.getElementById('btnRefreshLB');
+  if (btnRefresh) {
+    btnR
