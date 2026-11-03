@@ -518,6 +518,22 @@
   .modal-actions .primary { background: var(--gold); color: var(--ink); border: none; }
   .modal-actions .secondary { background: transparent; color: var(--cream); border: 1px solid rgba(244,233,200,.3); }
 
+  /* ---------- SHARE STORY ---------- */
+  .share-preview-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 16px 0;
+    max-height: 60vh;
+    overflow: auto;
+  }
+  #shareCanvas {
+    width: 270px;
+    height: 480px;
+    display: block;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.6);
+  }
+
   /* ---------- LEADER BOARD ---------- */
   .lb-spots {
     display: flex;
@@ -1436,7 +1452,6 @@
             <th class="lb-name">Jugador</th>
             <th class="lb-num">Manos</th>
             <th class="lb-num">%</th>
-            <th class="lb-num">Score</th>
             <th class="lb-num">Racha</th>
           </tr>
         </thead>
@@ -1444,10 +1459,8 @@
       </table>
     </div>
 
-    <div class="modal-actions lb-actions">
-      <button class="secondary" id="btnCloseLeaderboard">Cerrar</button>
-      <button class="secondary" id="btnRefreshLB">↻ Actualizar</button>
-      <button class="primary" id="btnShareLB">Compartir</button>
+    <div class="modal-actions">
+      <button class="primary" id="btnCloseLeaderboard">Cerrar</button>
     </div>
   </div>
 </div>
@@ -1629,7 +1642,25 @@
 
     <div class="modal-actions">
       <button class="secondary" id="btnResetEval">Reiniciar stats</button>
-      <button class="primary" id="btnCloseEval">Cerrar</button>
+      <button class="secondary" id="btnCloseEval">Cerrar</button>
+      <button class="primary" id="btnShareResult">Compartir resultados</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHARE STORY MODAL -->
+<div class="feedback" id="shareStoryModal">
+  <div class="feedback-box" style="max-width: 560px;">
+    <div class="result-banner ok" style="color:var(--gold); border-color:var(--gold); background:rgba(229,183,53,.10);">
+      COMPARTIR RESULTADOS
+    </div>
+    <div class="share-preview-wrap">
+      <canvas id="shareCanvas" width="1080" height="1920"></canvas>
+    </div>
+    <div class="modal-actions">
+      <button class="secondary" id="btnCloseShare">Cerrar</button>
+      <button class="secondary" id="btnDownloadShare">Descargar</button>
+      <button class="primary" id="btnShareNow">Compartir</button>
     </div>
   </div>
 </div>
@@ -1932,6 +1963,16 @@ function init() {
     newHand();
   });
   document.getElementById('btnCloseFB').addEventListener('click', closeFeedback);
+
+  // Share Story
+  const btnShareResult = document.getElementById('btnShareResult');
+  if (btnShareResult) btnShareResult.addEventListener('click', openShareStory);
+  const btnCloseShare = document.getElementById('btnCloseShare');
+  if (btnCloseShare) btnCloseShare.addEventListener('click', closeShareStory);
+  const btnDlShare = document.getElementById('btnDownloadShare');
+  if (btnDlShare) btnDlShare.addEventListener('click', downloadShareImage);
+  const btnShareNow = document.getElementById('btnShareNow');
+  if (btnShareNow) btnShareNow.addEventListener('click', shareNowImage);
 
   document.querySelectorAll('.act-btn').forEach(btn => {
     btn.addEventListener('click', () => handleAction(btn.dataset.action));
@@ -4169,13 +4210,11 @@ function renderLeaderboard(items) {
     const pct  = (it.porcentaje != null ? it.porcentaje : 0);
     const racha = (it.racha != null ? it.racha : 0);
     const manos = (it.manos != null ? it.manos : 0);
-    const score = (it.score != null) ? (Math.round(it.score * 10) / 10).toFixed(1) : '—';
     tr.innerHTML =
       '<td class="lb-rank">' + (i + 1) + '</td>' +
       '<td class="lb-name">' + name + '</td>' +
       '<td class="lb-num">'  + manos + '</td>' +
       '<td class="lb-num">'  + pct + '%</td>' +
-      '<td class="lb-num">'  + score + '</td>' +
       '<td class="lb-num">'  + racha + '</td>';
     tbody.appendChild(tr);
   });
@@ -4261,7 +4300,7 @@ window.addEventListener('message', (event) => {
   }
 });
 
-/* Handlers de tabs de rango temporal, chips de spot y botones del modal */
+/* Handlers de tabs de rango temporal y chips de spot */
 document.addEventListener('DOMContentLoaded', () => {
   const tabs = document.getElementById('lbTabs');
   if (tabs) {
@@ -4283,168 +4322,158 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
-  const btnRefresh = document.getElementById('btnRefreshLB');
-  if (btnRefresh) {
-    btnRefresh.addEventListener('click', () => {
-      // Fuerza re-envío de la sesión (invalidando el hash) y relee el ranking
-      LB_STATE.lastSentHash = null;
-      try { sendSessionToParent(); } catch (e) {}
-      setTimeout(() => requestLeaderboard(LB_STATE.currentRange, LB_STATE.currentSpot), 400);
-    });
-  }
-  const btnShare = document.getElementById('btnShareLB');
-  if (btnShare) {
-    btnShare.addEventListener('click', () => { shareSession().catch(e => console.log('[Share]', e)); });
-  }
 });
 
-/* ---------- COMPARTIR SESIÓN (imagen + Web Share API) ----------
-   Genera un canvas vertical 1080x1920 (formato Stories) con las stats de la
-   sesión actual y lo comparte vía navigator.share(). En móvil con IG
-   instalado, el usuario puede elegir Instagram desde el picker nativo.
-   Fallback: descarga la imagen. */
-async function shareSession() {
-  const h = (typeof state !== 'undefined' && state.history) ? state.history : [];
+/* ---------- SHARE STORY (Resultados compartibles) ----------
+   Genera una imagen 1080x1920 usando una plantilla premium como fondo
+   y sobrescribe los valores dinámicos (emoji, nivel, manos, aciertos,
+   score, racha). Se abre desde el botón "Compartir resultados" del
+   modal de Evaluación Final. */
+
+const SHARE_LEVELS = {
+  beginner:  { icon: '🌱', label: 'Principiante' },
+  improving: { icon: '📈', label: 'En desarrollo' },
+  solid:     { icon: '💪', label: 'Sólido' },
+  strong:    { icon: '🔥', label: 'Muy sólido' },
+  elite:     { icon: '🏆', label: 'Elite' }
+};
+
+function getPerformanceLevelKey(score) {
+  if (score >= 80) return 'elite';
+  if (score >= 65) return 'strong';
+  if (score >= 45) return 'solid';
+  if (score >= 30) return 'improving';
+  return 'beginner';
+}
+
+const SHARE_SLOTS = {
+  icon:     { x:540, y:740,  w:220, h:220, cover:'#02132a', font:'160px "Apple Color Emoji","Segoe UI Emoji",sans-serif', color:'#e5b735' },
+  level:    { x:540, y:905,  w:560, h:110, cover:'#02132a', font:'92px "Cinzel",serif',          color:'#ffd45e', weight:'700' },
+  hands:    { x:295, y:1035, w:280, h:125, cover:'#061e38', font:'115px "Roboto Slab",serif',    color:'#f6f2e6', weight:'800' },
+  accuracy: { x:785, y:1035, w:280, h:125, cover:'#061e38', font:'115px "Roboto Slab",serif',    color:'#f6f2e6', weight:'800' },
+  score:    { x:315, y:1265, w:280, h:125, cover:'#061e38', font:'115px "Roboto Slab",serif',    color:'#f6f2e6', weight:'800' },
+  streak:   { x:785, y:1265, w:280, h:125, cover:'#061e38', font:'115px "Roboto Slab",serif',    color:'#f6f2e6', weight:'800' }
+};
+
+let _shareTemplateImg = null;
+let _shareTemplateLoaded = false;
+function _loadShareTemplate() {
+  if (_shareTemplateImg) return _shareTemplateImg;
+  _shareTemplateImg = new Image();
+  _shareTemplateImg.crossOrigin = 'anonymous';
+  _shareTemplateImg.onload = () => { _shareTemplateLoaded = true; };
+  _shareTemplateImg.src = 'story-template.png';
+  return _shareTemplateImg;
+}
+
+function _computeShareStats() {
+  const h = (state && state.history) || [];
+  const manos = h.length;
+  const aciertos = h.filter(x => x.ok).length;
+  const pct = manos > 0 ? Math.round((aciertos / manos) * 100) : 0;
+  const score = (manos * pct + 50 * 50) / (manos + 50);
+  let bestStreak = 0, cur = 0;
+  h.forEach(x => { if (x.ok) { cur++; bestStreak = Math.max(bestStreak, cur); } else cur = 0; });
+  const levelKey = getPerformanceLevelKey(score);
+  return { manos, aciertos, pct, score, racha: bestStreak, levelKey, level: SHARE_LEVELS[levelKey] };
+}
+
+function _drawShareSlot(ctx, slot, text, filter) {
+  ctx.fillStyle = slot.cover;
+  ctx.fillRect(slot.x - slot.w/2, slot.y - slot.h/2, slot.w, slot.h);
+  ctx.font = (slot.weight ? slot.weight + ' ' : '') + slot.font;
+  ctx.fillStyle = slot.color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (filter) ctx.filter = filter;
+  ctx.fillText(text, slot.x, slot.y);
+  if (filter) ctx.filter = 'none';
+}
+
+function _renderShareCanvas() {
+  const canvas = document.getElementById('shareCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const s = _computeShareStats();
+
+  const draw = () => {
+    ctx.clearRect(0, 0, 1080, 1920);
+    if (_shareTemplateImg && _shareTemplateLoaded) {
+      ctx.drawImage(_shareTemplateImg, 0, 0, 1080, 1920);
+    } else {
+      ctx.fillStyle = '#020812';
+      ctx.fillRect(0, 0, 1080, 1920);
+      ctx.fillStyle = '#e5b735';
+      ctx.font = 'bold 40px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Cargando plantilla...', 540, 960);
+    }
+    _drawShareSlot(ctx, SHARE_SLOTS.icon, s.level.icon,
+      'sepia(1) saturate(5) hue-rotate(5deg) brightness(1.15) drop-shadow(0 0 25px rgba(229,183,53,.6))');
+    _drawShareSlot(ctx, SHARE_SLOTS.level,    s.level.label);
+    _drawShareSlot(ctx, SHARE_SLOTS.hands,    String(s.manos));
+    _drawShareSlot(ctx, SHARE_SLOTS.accuracy, s.pct + '%');
+    _drawShareSlot(ctx, SHARE_SLOTS.score,    s.score.toFixed(1));
+    _drawShareSlot(ctx, SHARE_SLOTS.streak,   String(s.racha));
+  };
+
+  if (_shareTemplateLoaded) {
+    draw();
+  } else {
+    _loadShareTemplate();
+    _shareTemplateImg.addEventListener('load', draw, { once: true });
+    draw(); // placeholder
+  }
+}
+
+function openShareStory() {
+  const h = (state && state.history) || [];
   if (h.length === 0) {
     alert('Juega al menos una mano antes de compartir.');
     return;
   }
-  const manos = h.length;
-  const aciertos = h.filter(x => x.ok).length;
-  const pct = Math.round((aciertos / manos) * 100);
-  let bestStreak = 0, cur = 0;
-  h.forEach(x => { if (x.ok) { cur++; bestStreak = Math.max(bestStreak, cur); } else cur = 0; });
-  const racha = bestStreak;
-  const score = Math.round(((manos * pct + 50 * 50) / (manos + 50)) * 10) / 10;
+  _loadShareTemplate();
+  document.getElementById('shareStoryModal').classList.add('show');
+  _renderShareCanvas();
+}
 
-  // Nivel dinámico según rendimiento (racha > % alto > % medio > volumen bajo > % bajo)
-  let levelEmoji, levelText;
-  if (racha >= 10)       { levelEmoji = '🔥🔥'; levelText = 'EN LLAMAS'; }
-  else if (racha >= 5)   { levelEmoji = '🔥';             levelText = 'En racha'; }
-  else if (pct >= 90)    { levelEmoji = '👑';             levelText = 'Dominando'; }
-  else if (pct >= 75)    { levelEmoji = '💪';             levelText = 'Sólido'; }
-  else if (pct >= 50)    { levelEmoji = '📈';             levelText = 'Mejorando'; }
-  else if (manos < 10)   { levelEmoji = '🎯';             levelText = 'Calentando'; }
-  else                   { levelEmoji = '💭';             levelText = 'Estudiando'; }
+function closeShareStory() {
+  document.getElementById('shareStoryModal').classList.remove('show');
+}
 
-  // Canvas 1080x1920 (formato Stories)
-  const canvas = document.createElement('canvas');
-  canvas.width = 1080;
-  canvas.height = 1920;
-  const ctx = canvas.getContext('2d');
+function downloadShareImage() {
+  const canvas = document.getElementById('shareCanvas');
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'poker-top-pro-resultados.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }, 'image/png');
+}
 
-  // Fondo gradient oscuro
-  const bg = ctx.createLinearGradient(0, 0, 0, 1920);
-  bg.addColorStop(0, '#0a0f14');
-  bg.addColorStop(1, '#020408');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, 1080, 1920);
-
-  // Borde dorado
-  ctx.strokeStyle = '#e5b735';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(30, 30, 1020, 1860);
-  ctx.strokeStyle = 'rgba(229,183,53,.3)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(50, 50, 980, 1820);
-
-  ctx.textAlign = 'center';
-
-  // Header: POKER TOP PRO
-  ctx.fillStyle = '#e5b735';
-  ctx.font = 'bold 76px Georgia, serif';
-  ctx.fillText('POKER TOP PRO', 540, 260);
-
-  ctx.fillStyle = '#f4e9c8';
-  ctx.font = '40px Georgia, serif';
-  ctx.fillText('· TRAINER PREFLOP ·', 540, 320);
-
-  // Línea separadora
-  ctx.strokeStyle = 'rgba(229,183,53,.5)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(240, 380);
-  ctx.lineTo(840, 380);
-  ctx.stroke();
-
-  // Nivel: emoji grande + texto
-  ctx.font = '160px sans-serif';
-  ctx.fillText(levelEmoji, 540, 620);
-  ctx.fillStyle = '#e5b735';
-  ctx.font = 'bold 72px Georgia, serif';
-  ctx.fillText(levelText, 540, 730);
-
-  // 4 cards de stats (grid 2x2)
-  const cards = [
-    { label: 'MANOS',    value: String(manos) },
-    { label: 'ACIERTOS', value: pct + '%' },
-    { label: 'SCORE',    value: score.toFixed(1) },
-    { label: 'RACHA',    value: String(racha) }
-  ];
-  const cardW = 440, cardH = 240, gap = 28;
-  const startX = (1080 - (2 * cardW + gap)) / 2;
-  const startY = 870;
-  for (let i = 0; i < cards.length; i++) {
-    const col = i % 2, row = Math.floor(i / 2);
-    const x = startX + col * (cardW + gap);
-    const y = startY + row * (cardH + gap);
-
-    ctx.fillStyle = 'rgba(10,15,20,.85)';
-    ctx.fillRect(x, y, cardW, cardH);
-    ctx.strokeStyle = 'rgba(229,183,53,.55)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, cardW, cardH);
-
-    ctx.fillStyle = '#f4e9c8';
-    ctx.font = 'bold 110px Georgia, serif';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(cards[i].value, x + cardW / 2, y + cardH / 2 - 10);
-
-    ctx.fillStyle = 'rgba(244,233,200,.6)';
-    ctx.font = '28px Georgia, serif';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(cards[i].label, x + cardW / 2, y + cardH - 32);
-  }
-
-  // Footer: URL
-  ctx.fillStyle = '#e5b735';
-  ctx.font = 'bold 46px Georgia, serif';
-  ctx.fillText('pokertoppro.com', 540, 1800);
-
-  // Convertir a blob y compartir
-  await new Promise(resolve => {
-    canvas.toBlob(async (blob) => {
-      if (!blob) { resolve(); return; }
-      const file = new File([blob], 'poker-top-pro-sesion.png', { type: 'image/png' });
-
-      const shareText = levelEmoji + ' ' + levelText + ' en Poker Top Pro Trainer\n'
-        + manos + ' manos · ' + pct + '% aciertos · racha ' + racha + '\n'
-        + 'pokertoppro.com';
-
-      const shareData = { files: [file], title: 'Mi sesión en Poker Top Pro', text: shareText };
-
-      try {
-        if (navigator.canShare && navigator.canShare(shareData) && navigator.share) {
-          await navigator.share(shareData);
-        } else {
-          // Fallback: descarga la imagen
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'poker-top-pro-sesion.png';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(url), 1500);
-          // Copiar texto al portapapeles si está disponible
-          try { await navigator.clipboard.writeText(shareText); } catch (e) {}
-        }
-      } catch (e) {
-        // Usuario canceló el share — silencioso
+async function shareNowImage() {
+  const canvas = document.getElementById('shareCanvas');
+  canvas.toBlob(async (blob) => {
+    if (!blob) return;
+    const file = new File([blob], 'poker-top-pro-resultados.png', { type: 'image/png' });
+    const s = _computeShareStats();
+    const text = s.level.icon + ' ' + s.level.label + ' en Poker Top Pro Trainer Preflop\n'
+      + s.manos + ' manos · ' + s.pct + '% aciertos · racha ' + s.racha + '\n'
+      + 'pokertoppro.com';
+    const shareData = { files: [file], title: 'Mi resultado en Poker Top Pro', text };
+    try {
+      if (navigator.canShare && navigator.canShare(shareData) && navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        downloadShareImage();
       }
-      resolve();
-    }, 'image/png');
-  });
+    } catch (e) { /* cancelado */ }
+  }, 'image/png');
 }
 
 /* ---------- ARRANQUE ---------- */
