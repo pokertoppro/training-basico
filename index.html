@@ -4302,6 +4302,25 @@ window.addEventListener('message', (event) => {
       // De momento solo lo registramos en consola.
       // console.log('[LB] Sesión no guardada: usuario no logueado');
     }
+  } else if (msg.type === 'LB_MY_STATS_OK') {
+    // Respuesta al Compartir desde Leader Board: stats del member para
+    // el rango/spot activos. Si matchea el requestId pendiente, abrir share.
+    if (msg.requestId && msg.requestId === _shareRequestPending) {
+      _shareRequestPending = null;
+      if (_shareFallbackTimer) { clearTimeout(_shareFallbackTimer); _shareFallbackTimer = null; }
+      if (msg.result && (msg.result.manos || 0) > 0) {
+        openShareStory(msg.result);
+      } else {
+        // Sin datos para el periodo/spot — fallback a sesión local
+        openShareStory();
+      }
+    }
+  } else if (msg.type === 'LB_MY_STATS_ERR') {
+    if (msg.requestId && msg.requestId === _shareRequestPending) {
+      _shareRequestPending = null;
+      if (_shareFallbackTimer) { clearTimeout(_shareFallbackTimer); _shareFallbackTimer = null; }
+      openShareStory(); // fallback a sesión local
+    }
   }
 });
 
@@ -4339,9 +4358,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnShareLB = document.getElementById('btnShareLB');
   if (btnShareLB) {
     btnShareLB.addEventListener('click', () => {
-      // Cerrar el modal del Leader Board y abrir el ShareStory
+      // Cerrar el modal del Leader Board y pedir al backend las stats del
+      // periodo/spot activo. Al llegar la respuesta, se abre el share.
       closeLeaderboard();
-      openShareStory();
+      openShareStoryFromLeaderboard();
     });
   }
 });
@@ -4360,11 +4380,15 @@ const SHARE_LEVELS = {
   elite:     { icon: '🏆', label: 'Elite' }
 };
 
-function getPerformanceLevelKey(score) {
-  if (score >= 80) return 'elite';
-  if (score >= 65) return 'strong';
-  if (score >= 45) return 'solid';
-  if (score >= 30) return 'improving';
+// Para el COMPARTIR, el nivel se calcula a partir del % de aciertos real
+// (no del score bayesiano, que se usa solo para ordenar el Leader Board).
+// Escala "Opción A" (estándar):
+//   >=90 Elite · 80-89 Muy sólido · 70-79 Sólido · 55-69 En desarrollo · <55 Principiante
+function getPerformanceLevelKey(pct) {
+  if (pct >= 90) return 'elite';
+  if (pct >= 80) return 'strong';
+  if (pct >= 70) return 'solid';
+  if (pct >= 55) return 'improving';
   return 'beginner';
 }
 
@@ -4388,7 +4412,28 @@ function _loadShareTemplate() {
   return _shareTemplateImg;
 }
 
+// Override opcional: si tiene valor, _computeShareStats usa esos datos en
+// lugar de los de la sesión local (usado cuando compartimos desde el
+// Leader Board, para respetar los filtros de rango/spot activos).
+let _shareOverrideStats = null;
+let _shareRequestPending = null;
+let _shareFallbackTimer  = null;
+
 function _computeShareStats() {
+  if (_shareOverrideStats) {
+    const s = _shareOverrideStats;
+    const score = (typeof s.score === 'number') ? s.score : 0;
+    const pct   = s.porcentaje != null ? s.porcentaje : (s.pct || 0);
+    const levelKey = getPerformanceLevelKey(pct);
+    return {
+      manos:    s.manos    || 0,
+      aciertos: s.aciertos || 0,
+      pct:      pct,
+      score:    score,
+      racha:    s.racha    || 0,
+      levelKey, level: SHARE_LEVELS[levelKey]
+    };
+  }
   const h = (state && state.history) || [];
   const manos = h.length;
   const aciertos = h.filter(x => x.ok).length;
@@ -4396,7 +4441,7 @@ function _computeShareStats() {
   const score = (manos * pct + 50 * 50) / (manos + 50);
   let bestStreak = 0, cur = 0;
   h.forEach(x => { if (x.ok) { cur++; bestStreak = Math.max(bestStreak, cur); } else cur = 0; });
-  const levelKey = getPerformanceLevelKey(score);
+  const levelKey = getPerformanceLevelKey(pct);
   return { manos, aciertos, pct, score, racha: bestStreak, levelKey, level: SHARE_LEVELS[levelKey] };
 }
 
@@ -4448,15 +4493,47 @@ function _renderShareCanvas() {
   }
 }
 
-function openShareStory() {
-  const h = (state && state.history) || [];
-  if (h.length === 0) {
-    alert('Juega al menos una mano antes de compartir.');
-    return;
+function openShareStory(externalStats) {
+  // externalStats: objeto opcional { manos, aciertos, porcentaje, score, racha }
+  // Si llega, lo usamos como override (desde el Leader Board con filtros).
+  // Si no llega, usamos la sesión local.
+  _shareOverrideStats = externalStats || null;
+  if (!externalStats) {
+    const h = (state && state.history) || [];
+    if (h.length === 0) {
+      alert('Juega al menos una mano antes de compartir.');
+      return;
+    }
+  } else {
+    if ((externalStats.manos || 0) === 0) {
+      alert('No hay datos para compartir en este filtro.');
+      return;
+    }
   }
   _loadShareTemplate();
   document.getElementById('shareStoryModal').classList.add('show');
   _renderShareCanvas();
+}
+
+// Solicita las stats agregadas al parent Wix (respetando rango/spot activos
+// del Leader Board) y al recibirlas abre el share. Fallback a stats locales
+// si el parent no responde o no hay member logueado.
+function openShareStoryFromLeaderboard() {
+  const requestId = 'myst-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  _shareRequestPending = requestId;
+  if (_shareFallbackTimer) clearTimeout(_shareFallbackTimer);
+  _shareFallbackTimer = setTimeout(() => {
+    if (_shareRequestPending === requestId) {
+      _shareRequestPending = null;
+      openShareStory(); // fallback: stats locales
+    }
+  }, 3500);
+  sendToParent({
+    type: 'LB_MY_STATS',
+    range: LB_STATE.currentRange,
+    spot:  LB_STATE.currentSpot,
+    requestId
+  });
 }
 
 function closeShareStory() {
